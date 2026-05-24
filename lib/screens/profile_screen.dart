@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/supabase_service.dart';
 import 'edit_profile_screen.dart';
 
 class UserModel {
   String name;
   String email;
   String gender;
+  String birthDate;
+  String bio;
   bool hasTreatment;
   int treatmentDay;
 
@@ -12,6 +16,8 @@ class UserModel {
     required this.name,
     required this.email,
     required this.gender,
+    required this.birthDate,
+    required this.bio,
     required this.hasTreatment,
     required this.treatmentDay,
   });
@@ -25,30 +31,63 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // Dummy Data
-  UserModel _user = UserModel(
-    name: 'Fattah Fernandez',
-    email: 'fandez@gmail.com',
-    gender: 'Laki-laki',
-    hasTreatment: true,
-    treatmentDay: 122,
-  );
+  UserModel? _user;
+  bool _isLoading = true;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    try {
+      final userAuth = Supabase.instance.client.auth.currentUser;
+      final profileData = await SupabaseService().getUserProfile();
+      
+      if (userAuth != null && mounted) {
+        setState(() {
+          int tDay = 0;
+          if (profileData?['has_treatment'] == true && profileData?['treatment_start_date'] != null) {
+            final startDate = DateTime.parse(profileData!['treatment_start_date']);
+            tDay = DateTime.now().difference(startDate).inDays;
+          }
+
+          _user = UserModel(
+            name: profileData?['full_name'] ?? 'User',
+            email: userAuth.email ?? '',
+            gender: profileData?['gender'] ?? 'Belum diisi',
+            birthDate: profileData?['birth_date'] ?? '',
+            bio: profileData?['bio'] ?? '',
+            hasTreatment: profileData?['has_treatment'] ?? false,
+            treatmentDay: tDay,
+          );
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal memuat profil: $e')));
+      }
+    }
+  }
   bool _reminderObat = true;
   bool _notifEdukasi = true;
   bool _laporanMingguan = false;
 
   String get avatarPath {
-    if (_user.gender == 'Perempuan') return 'assets/images/avatar_female.png';
-    if (_user.gender == 'Laki-laki') return 'assets/images/avatar_male.png';
-    return 'assets/images/avatar_default.png';
+    if (_user?.gender == 'Perempuan') return 'assets/avatar_female.png';
+    if (_user?.gender == 'Laki-laki') return 'assets/avatar_male.png';
+    return 'assets/pulmocarelogo.jpeg';
   }
 
   void _navigateToEditProfile() async {
+    if (_user == null) return;
     final updatedUser = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => EditProfileScreen(user: _user),
+        builder: (context) => EditProfileScreen(user: _user!),
       ),
     );
 
@@ -61,6 +100,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20))),
+      );
+    }
+
+    if (_user == null) {
+      return const Scaffold(
+        body: Center(child: Text('Gagal memuat profil.')),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: SingleChildScrollView(
@@ -73,70 +124,84 @@ class _ProfileScreenState extends State<ProfileScreen> {
               decoration: const BoxDecoration(
                 color: Color(0xFF1B5E20), // Dark green
               ),
-              child: Column(
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Colors.white,
-                    child: ClipOval(
-                      child: Image.asset(
-                        avatarPath,
-                        width: 96,
-                        height: 96,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.person, size: 50, color: Colors.grey),
+                  Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.white,
+                        child: ClipOval(
+                          child: Image.asset(
+                            avatarPath,
+                            width: 96,
+                            height: 96,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.person, size: 50, color: Colors.grey),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _user.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_user.hasTreatment) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(20),
+                      const SizedBox(height: 16),
+                      Text(
+                        _user!.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      if (_user!.hasTreatment) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFA5D6A7),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Pasien TBC - Hari ke-${_user!.treatmentDay}',
+                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      
+                      // STATS
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFA5D6A7),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Pasien TBC - Hari ke-${_user.treatmentDay}',
-                            style: const TextStyle(color: Colors.white, fontSize: 13),
-                          ),
+                          _buildStatItem('68%', 'PROGRES'),
+                          Container(width: 1, height: 40, color: Colors.white30),
+                          _buildStatItem('98%', 'KEPATUHAN'),
+                          Container(width: 1, height: 40, color: Colors.white30),
+                          _buildStatItem('58', 'HARI LAGI'),
                         ],
                       ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  
-                  // STATS
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildStatItem('68%', 'PROGRES'),
-                      Container(width: 1, height: 40, color: Colors.white30),
-                      _buildStatItem('98%', 'KEPATUHAN'),
-                      Container(width: 1, height: 40, color: Colors.white30),
-                      _buildStatItem('58', 'HARI LAGI'),
                     ],
+                  ),
+                  Positioned(
+                    top: -10,
+                    right: -10,
+                    child: IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.white),
+                      tooltip: 'Edit Profil',
+                      onPressed: _navigateToEditProfile,
+                    ),
                   ),
                 ],
               ),
@@ -156,9 +221,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     child: Column(
                       children: [
-                        _buildInfoItem(Icons.person_outline, 'NAMA', _user.name),
+                        _buildInfoItem(Icons.person_outline, 'NAMA', _user!.name),
                         const Divider(height: 1, indent: 64, endIndent: 20),
-                        _buildInfoItem(Icons.email_outlined, 'EMAIL', _user.email),
+                        _buildInfoItem(Icons.email_outlined, 'EMAIL', _user!.email),
+                        const Divider(height: 1, indent: 64, endIndent: 20),
+                        _buildInfoItem(Icons.wc_outlined, 'GENDER', _user!.gender),
                       ],
                     ),
                   ),
@@ -210,8 +277,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.pushReplacementNamed(context, '/login');
+                      onPressed: () async {
+                        await Supabase.instance.client.auth.signOut();
+                        // Navigation is handled by main.dart onAuthStateChange
                       },
                       icon: const Icon(Icons.logout, color: Color(0xFFC62828)),
                       label: const Text(

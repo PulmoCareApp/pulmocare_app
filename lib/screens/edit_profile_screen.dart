@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'profile_screen.dart';
+import '../services/supabase_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final UserModel user;
@@ -13,6 +14,8 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
+  late TextEditingController _birthDateController;
+  late TextEditingController _bioController;
   late String _selectedGender;
 
   @override
@@ -20,6 +23,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.initState();
     _nameController = TextEditingController(text: widget.user.name);
     _emailController = TextEditingController(text: widget.user.email);
+    _birthDateController = TextEditingController(text: widget.user.birthDate.isEmpty ? '08/14/1995' : widget.user.birthDate);
+    _bioController = TextEditingController(text: widget.user.bio.isEmpty ? 'Bismillah sehat dan kaya raya di umur 20-an. Bisa financial freedom di umur 20-an kaya mark lee. HUHU PENGEN.' : widget.user.bio);
     _selectedGender = widget.user.gender;
   }
 
@@ -29,15 +34,40 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return 'assets/images/avatar_default.png';
   }
 
-  void _saveChanges() {
-    final updatedUser = UserModel(
-      name: _nameController.text,
-      email: _emailController.text,
-      gender: _selectedGender,
-      hasTreatment: widget.user.hasTreatment,
-      treatmentDay: widget.user.treatmentDay,
-    );
-    Navigator.pop(context, updatedUser);
+  bool _isSaving = false;
+
+  void _saveChanges() async {
+    setState(() => _isSaving = true);
+    try {
+      await SupabaseService().updateUserProfile(
+        name: _nameController.text,
+        gender: _selectedGender,
+        birthDate: _birthDateController.text,
+        bio: _bioController.text,
+        hasTreatment: widget.user.hasTreatment,
+      );
+
+      final updatedUser = UserModel(
+        name: _nameController.text,
+        email: _emailController.text,
+        gender: _selectedGender,
+        birthDate: _birthDateController.text,
+        bio: _bioController.text,
+        hasTreatment: widget.user.hasTreatment,
+        treatmentDay: widget.user.treatmentDay,
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profil berhasil diperbarui')));
+        Navigator.pop(context, updatedUser);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
@@ -132,7 +162,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     borderSide: BorderSide.none,
                   ),
                 ),
-                items: ['Laki-laki', 'Perempuan'].map((String value) {
+                items: ['Belum diisi', 'Laki-laki', 'Perempuan'].map((String value) {
                   return DropdownMenuItem<String>(
                     value: value,
                     child: Text(value, style: const TextStyle(fontSize: 14, color: Colors.black87)),
@@ -150,7 +180,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: 20),
 
             _buildFieldLabel('TANGGAL LAHIR'),
-            _buildTextField(initialValue: '08/14/1995', readOnly: true),
+            _buildTextField(controller: _birthDateController),
             const SizedBox(height: 20),
 
             _buildFieldLabel('KATA SANDI'),
@@ -180,9 +210,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
             _buildFieldLabel('BIO / CATATAN KESEHATAN SINGKAT'),
             _buildTextField(
-              initialValue: 'Bismillah sehat dan kaya raya di umur 20-an. Bisa financial freedom di umur 20-an kaya mark lee. HUHU PENGEN.',
+              controller: _bioController,
               maxLines: 4,
-              readOnly: true,
             ),
             const SizedBox(height: 40),
 
@@ -190,7 +219,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _saveChanges,
+                onPressed: _isSaving ? null : _saveChanges,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1B5E20), // Dark Green
                   elevation: 0,
@@ -199,14 +228,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                child: const Text(
-                  'Simpan Perubahan',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text(
+                        'Simpan Perubahan',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
               ),
             ),
           ],
@@ -255,6 +290,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _birthDateController.dispose();
+    _bioController.dispose();
     super.dispose();
   }
 }

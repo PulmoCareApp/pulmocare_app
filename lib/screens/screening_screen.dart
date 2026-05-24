@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/supabase_service.dart';
 
 class ScreeningScreen extends StatefulWidget {
   const ScreeningScreen({Key? key}) : super(key: key);
@@ -19,10 +20,31 @@ class _ScreeningScreenState extends State<ScreeningScreen> {
 
   final TextEditingController _durasiController = TextEditingController();
 
-  void _cekHasil() {
-    // Dummy logic
+  void _cekHasil() async {
+    // Basic logic
     bool adaGejala = _batuk || _demam || _keringatMalam || _penurunanBerat;
     
+    // Calculate a simple score for the database
+    int score = 0;
+    if (_batuk) score++;
+    if (_demam) score++;
+    if (_keringatMalam) score++;
+    if (_penurunanBerat) score++;
+    if (_riwayatKontak == true) score++;
+
+    String status = score > 2 ? 'Risiko Tinggi' : (score > 0 ? 'Perlu Perhatian' : 'Risiko Rendah');
+
+    try {
+      await SupabaseService().saveScreeningResult(
+        score: score,
+        status: status,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan hasil: $e')));
+      }
+    }
+
     Navigator.pushNamed(
       context, 
       '/result', 

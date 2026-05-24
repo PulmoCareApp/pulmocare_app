@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/custom_textfield.dart';
 import '../widgets/custom_button.dart';
+import 'main_navigation.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -34,9 +36,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() {}); // Rebuild to evaluate _isFormValid and update button state
   }
 
-  void _submit() {
+  bool _isLoading = false;
+
+  void _submit() async {
     if (_formKey.currentState!.validate()) {
-      Navigator.pushReplacementNamed(context, '/main');
+      setState(() => _isLoading = true);
+      try {
+        final response = await Supabase.instance.client.auth.signUp(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+          data: {'full_name': _nameController.text.trim()},
+        );
+        if (mounted) {
+          if (response.session != null) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const MainNavigation()),
+              (route) => false,
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pendaftaran berhasil! Silakan login.')));
+            Navigator.pushReplacementNamed(context, '/login');
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Daftar gagal: ${e.toString()}')));
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
     }
   }
 
@@ -84,6 +115,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               children: [
                                 Expanded(
                                   child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
                                     onTap: () {
                                       Navigator.pushReplacementNamed(context, '/login');
                                     },

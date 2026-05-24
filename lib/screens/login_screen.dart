@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/custom_textfield.dart';
 import '../widgets/custom_button.dart';
+import 'main_navigation.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -25,9 +27,32 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {}); // Rebuild to evaluate _isFormValid and update button state
   }
 
-  void _submit() {
+  bool _isLoading = false;
+
+  void _submit() async {
     if (_formKey.currentState!.validate()) {
-      Navigator.pushReplacementNamed(context, '/main');
+      setState(() => _isLoading = true);
+      try {
+        await Supabase.instance.client.auth.signInWithPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const MainNavigation()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login gagal: ${e.toString()}')));
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
     }
   }
 
@@ -92,6 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                                 Expanded(
                                   child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
                                     onTap: () {
                                       Navigator.pushReplacementNamed(context, '/register');
                                     },

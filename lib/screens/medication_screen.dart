@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/medication_card.dart';
+import '../services/supabase_service.dart';
+import '../services/notification_service.dart';
 
 class MedicationScreen extends StatefulWidget {
   const MedicationScreen({Key? key}) : super(key: key);
@@ -9,6 +11,13 @@ class MedicationScreen extends StatefulWidget {
 }
 
 class _MedicationScreenState extends State<MedicationScreen> {
+  final _nameController = TextEditingController();
+  final _dosageController = TextEditingController();
+  final _notesController = TextEditingController();
+  String _dosageUnit = 'mg';
+  List<String> _times = ['08:00', '12:30'];
+  bool _isLoading = false;
+
   // Dummy Data for medications local state
   final List<Map<String, dynamic>> _medications = [
     {
@@ -51,6 +60,62 @@ class _MedicationScreenState extends State<MedicationScreen> {
         duration: Duration(seconds: 2),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _dosageController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  void _saveReminder() async {
+    if (_nameController.text.isEmpty || _dosageController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nama dan Dosis tidak boleh kosong')));
+      return;
+    }
+    setState(() => _isLoading = true);
+
+    try {
+      for (String time in _times) {
+        await SupabaseService().saveMedicationReminder(
+          name: _nameController.text,
+          dosage: '${_dosageController.text} $_dosageUnit',
+          time: time,
+        );
+
+        final parts = time.split(':');
+        if (parts.length == 2) {
+          int hour = int.parse(parts[0]);
+          int min = int.parse(parts[1]);
+          await NotificationService().scheduleDailyReminder(
+            id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+            title: 'Waktunya Minum Obat!',
+            body: 'Jangan lupa minum ${_nameController.text}',
+            hour: hour,
+            minute: min,
+          );
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pengingat berhasil disimpan!')));
+        setState(() {
+           _nameController.clear();
+           _dosageController.clear();
+           _notesController.clear();
+           _isJadwalHariIni = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -230,6 +295,7 @@ class _MedicationScreenState extends State<MedicationScreen> {
               ),
               const SizedBox(height: 8),
               TextField(
+                controller: _nameController,
                 decoration: InputDecoration(
                   hintText: 'Contoh: Paracetamol',
                   hintStyle: const TextStyle(color: Colors.black38),
@@ -254,6 +320,7 @@ class _MedicationScreenState extends State<MedicationScreen> {
                   Expanded(
                     flex: 2,
                     child: TextField(
+                      controller: _dosageController,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
                         hintText: '0',
@@ -279,7 +346,7 @@ class _MedicationScreenState extends State<MedicationScreen> {
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
-                          value: 'mg',
+                          value: _dosageUnit,
                           icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black54),
                           items: <String>['mg', 'ml', 'tablet'].map((String value) {
                             return DropdownMenuItem<String>(
@@ -287,7 +354,9 @@ class _MedicationScreenState extends State<MedicationScreen> {
                               child: Text(value, style: const TextStyle(color: Colors.black87)),
                             );
                           }).toList(),
-                          onChanged: (_) {},
+                          onChanged: (val) {
+                            if (val != null) setState(() => _dosageUnit = val);
+                          },
                         ),
                       ),
                     ),
@@ -403,6 +472,7 @@ class _MedicationScreenState extends State<MedicationScreen> {
               ),
               const SizedBox(height: 8),
               TextField(
+                controller: _notesController,
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText: 'Contoh: Sesudah Makan',
@@ -424,7 +494,7 @@ class _MedicationScreenState extends State<MedicationScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {},
+                  onPressed: _isLoading ? null : _saveReminder,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0F3D1B),
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -432,14 +502,20 @@ class _MedicationScreenState extends State<MedicationScreen> {
                       borderRadius: BorderRadius.circular(24),
                     ),
                   ),
-                  child: const Text(
-                    'Simpan Pengingat',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Simpan Pengingat',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
                 ),
               ),
             ],
