@@ -23,8 +23,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.initState();
     _nameController = TextEditingController(text: widget.user.name);
     _emailController = TextEditingController(text: widget.user.email);
-    _birthDateController = TextEditingController(text: widget.user.birthDate.isEmpty ? '08/14/1995' : widget.user.birthDate);
-    _bioController = TextEditingController(text: widget.user.bio.isEmpty ? 'Bismillah sehat dan kaya raya di umur 20-an. Bisa financial freedom di umur 20-an kaya mark lee. HUHU PENGEN.' : widget.user.bio);
+    _birthDateController = TextEditingController(text: widget.user.birthDate);
+    _bioController = TextEditingController(text: widget.user.bio);
     _selectedGender = widget.user.gender;
   }
 

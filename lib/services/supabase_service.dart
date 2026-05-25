@@ -79,8 +79,8 @@ class SupabaseService {
       await _supabase.from('profiles').update({
         'full_name': name,
         'gender': gender,
-        if (birthDate != null) 'birth_date': birthDate,
-        if (bio != null) 'bio': bio,
+        'birth_date': birthDate ?? '',
+        'bio': bio ?? '',
         'has_treatment': hasTreatment,
         'treatment_start_date': treatmentStartDate?.toIso8601String(),
       }).eq('id', user.id);
@@ -104,10 +104,56 @@ class SupabaseService {
         'user_id': user.id,
         'medication_name': name,
         'dosage': dosage,
-        'time_to_take': '$time:00', // Supabase time format
+        'time_to_take': '$time:00', // Supabase time format HH:MM:SS
+        'is_taken': false,
       });
     } catch (e) {
       throw Exception('Gagal menyimpan pengingat: $e');
     }
+  }
+
+  // Fungsi untuk mengambil semua pengingat obat milik user (termasuk status is_taken)
+  Future<List<Map<String, dynamic>>> getMedicationReminders() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return [];
+
+    try {
+      final data = await _supabase
+          .from('medication_reminders')
+          .select()
+          .eq('user_id', user.id)
+          .order('time_to_take', ascending: true);
+      return List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Fungsi untuk menandai obat sudah diminum (konfirmasi)
+  Future<void> confirmMedicationTaken(dynamic reminderId) async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) throw Exception('User belum login');
+
+    try {
+      await _supabase.from('medication_reminders').update({
+        'is_taken': true,
+        'taken_date': DateTime.now().toIso8601String(),
+      }).eq('id', reminderId).eq('user_id', user.id);
+    } catch (e) {
+      throw Exception('Gagal mengonfirmasi: $e');
+    }
+  }
+
+  // Fungsi untuk reset status is_taken (setiap hari baru, opsional)
+  Future<void> resetDailyMedicationStatus() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await _supabase.from('medication_reminders').update({
+        'is_taken': false,
+        'taken_date': null,
+      }).eq('user_id', user.id);
+    } catch (_) {}
   }
 }

@@ -181,17 +181,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ],
                       const SizedBox(height: 24),
                       
-                      // STATS
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildStatItem('68%', 'PROGRES'),
-                          Container(width: 1, height: 40, color: Colors.white30),
-                          _buildStatItem('98%', 'KEPATUHAN'),
-                          Container(width: 1, height: 40, color: Colors.white30),
-                          _buildStatItem('58', 'HARI LAGI'),
-                        ],
-                      ),
+                      // STATS — hanya tampil jika user punya treatment aktif
+                      if (_user!.hasTreatment) ...[
+                        const SizedBox(height: 24),
+                        Builder(builder: (context) {
+                          const int totalDays = 128;
+                          final tDay = _user!.treatmentDay.clamp(0, totalDays);
+                          final sisa = (totalDays - tDay).clamp(0, totalDays);
+                          final progres = totalDays > 0
+                              ? ((tDay / totalDays) * 100).round()
+                              : 0;
+                          // Kepatuhan: placeholder 100% jika baru mulai, bisa dihitung dari data aktual
+                          const int kepatuhan = 100;
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildStatItem('$progres%', 'PROGRES'),
+                              Container(width: 1, height: 40, color: Colors.white30),
+                              _buildStatItem('$kepatuhan%', 'KEPATUHAN'),
+                              Container(width: 1, height: 40, color: Colors.white30),
+                              _buildStatItem('$sisa', 'HARI LAGI'),
+                            ],
+                          );
+                        }),
+                      ] else ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'Belum ada data pengobatan aktif',
+                            style: TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   Positioned(

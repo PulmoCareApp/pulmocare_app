@@ -22,10 +22,11 @@ class _MedicationScreenState extends State<MedicationScreen> {
   List<String> _selectedDays = [];
   bool _isEveryDay = true;
   bool _isLoading = false;
+  bool _isScheduleLoading = false;
   bool _isJadwalHariIni = true;
 
-  // Saved reminders displayed in jadwal hari ini
-  final List<Map<String, dynamic>> _savedMedications = [];
+  // Reminders loaded FROM Supabase (persisted, survives refresh)
+  List<Map<String, dynamic>> _savedMedications = [];
 
   // Real-time calendar state
   late DateTime _today;
@@ -46,6 +47,37 @@ class _MedicationScreenState extends State<MedicationScreen> {
     // Week starts on Monday
     final weekday = _today.weekday; // 1=Mon .. 7=Sun
     _calendarWeekStart = _today.subtract(Duration(days: weekday - 1));
+    // Load reminders from Supabase on startup
+    _loadMedications();
+  }
+
+  // ── Load from Supabase ──────────────────────────────────────────────────────
+  Future<void> _loadMedications() async {
+    if (!mounted) return;
+    setState(() => _isScheduleLoading = true);
+    try {
+      final data = await SupabaseService().getMedicationReminders();
+      if (mounted) {
+        setState(() {
+          _savedMedications = data.map((row) {
+            final timeRaw = (row['time_to_take'] as String? ?? '00:00:00');
+            // Supabase returns HH:MM:SS, we need HH:MM
+            final timeHHMM = timeRaw.length >= 5 ? timeRaw.substring(0, 5) : timeRaw;
+            final isTaken = row['is_taken'] == true;
+            return {
+              'id': row['id'],
+              'timeText': '${_periodLabel(timeHHMM)} \u2022 ${_formatTime12h(timeHHMM)}',
+              'title': '${row['medication_name']} ${row['dosage']}',
+              'description': row['notes'] as String?,
+              'status': isTaken ? 'done' : 'todo',
+            };
+          }).toList();
+        });
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _isScheduleLoading = false);
+    }
   }
 
   @override
@@ -70,9 +102,10 @@ class _MedicationScreenState extends State<MedicationScreen> {
   String _periodLabel(String time24) {
     final parts = time24.split(':');
     int h = int.tryParse(parts[0]) ?? 0;
-    if (h >= 5 && h < 12) return 'PAGI';
-    if (h >= 12 && h < 17) return 'SIANG';
-    if (h >= 17 && h < 21) return 'SORE';
+    // Pagi: 04:00 - 10:59, Siang: 11:00 - 14:59, Sore: 15:00 - 17:59, Malam: 18:00 - 03:59
+    if (h >= 4 && h < 11) return 'PAGI';
+    if (h >= 11 && h < 15) return 'SIANG';
+    if (h >= 15 && h < 18) return 'SORE';
     return 'MALAM';
   }
 
@@ -169,30 +202,12 @@ class _MedicationScreenState extends State<MedicationScreen> {
         }
       }
 
-      // Add to local schedule list
       if (mounted) {
-        final name = _nameController.text.trim();
-        final dosage = '${_dosageController.text.trim()} $_dosageUnit';
-        final notes =
-            _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null;
+        // Reset form
+        _nameController.clear();
+        _dosageController.clear();
+        _notesController.clear();
         setState(() {
-          for (int i = 0; i < _times.length; i++) {
-            final t = _times[i];
-            _savedMedications.add({
-              'id': DateTime.now().millisecondsSinceEpoch + i,
-              'timeText': '${_periodLabel(t)} • ${_formatTime12h(t)}',
-              'title': '$name $dosage',
-              'description': notes,
-              'status': 'todo',
-            });
-          }
-          _savedMedications.sort((a, b) =>
-              (a['timeText'] as String).compareTo(b['timeText'] as String));
-
-          // Reset form
-          _nameController.clear();
-          _dosageController.clear();
-          _notesController.clear();
           _times = [];
           _selectedDays = [];
           _isEveryDay = true;
@@ -203,6 +218,9 @@ class _MedicationScreenState extends State<MedicationScreen> {
           content: Text('Pengingat berhasil disimpan!'),
           backgroundColor: Color(0xFF1B5E20),
         ));
+
+        // Reload from Supabase so list stays in sync
+        await _loadMedications();
       }
     } catch (e) {
       if (mounted) {
@@ -214,16 +232,35 @@ class _MedicationScreenState extends State<MedicationScreen> {
     }
   }
 
-  void _confirmMedication(int id) {
+  // Konfirmasi minum obat — simpan ke Supabase, update UI secara optimistik
+  void _confirmMedication(dynamic id) async {
+    // Optimistic update UI dulu
     setState(() {
       final idx = _savedMedications.indexWhere((m) => m['id'] == id);
       if (idx != -1) _savedMedications[idx]['status'] = 'done';
     });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Status obat berhasil diperbarui!'),
-      backgroundColor: Color(0xFF1B5E20),
-      duration: Duration(seconds: 2),
-    ));
+
+    try {
+      await SupabaseService().confirmMedicationTaken(id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('\u2705 Obat berhasil dikonfirmasi!'),
+          backgroundColor: Color(0xFF1B5E20),
+          duration: Duration(seconds: 2),
+        ));
+      }
+    } catch (e) {
+      // Rollback jika gagal
+      if (mounted) {
+        setState(() {
+          final idx = _savedMedications.indexWhere((m) => m['id'] == id);
+          if (idx != -1) _savedMedications[idx]['status'] = 'todo';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal konfirmasi: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   // --- Calendar week navigation ---
@@ -389,26 +426,37 @@ class _MedicationScreenState extends State<MedicationScreen> {
       const SizedBox(height: 24),
 
       // Medication list or empty state
-      if (_savedMedications.isEmpty) ...[
+      if (_isScheduleLoading)
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: CircularProgressIndicator(color: Color(0xFF1B5E20)),
+          ),
+        )
+      else if (_savedMedications.isEmpty) ...[
         _buildEmptyState(),
       ] else ...[
-        ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _savedMedications.length,
-          itemBuilder: (context, index) {
-            final med = _savedMedications[index];
-            return MedicationCard(
-              timeText: med['timeText'],
-              title: med['title'],
-              description: med['description'],
-              status: med['status'],
-              isLast: index == _savedMedications.length - 1,
-              onConfirm: med['status'] == 'todo'
-                  ? () => _confirmMedication(med['id'])
-                  : null,
-            );
-          },
+        RefreshIndicator(
+          color: const Color(0xFF1B5E20),
+          onRefresh: _loadMedications,
+          child: ListView.builder(
+            shrinkWrap: true,
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: _savedMedications.length,
+            itemBuilder: (context, index) {
+              final med = _savedMedications[index];
+              return MedicationCard(
+                timeText: med['timeText'] as String,
+                title: med['title'] as String,
+                description: med['description'] as String?,
+                status: med['status'] as String,
+                isLast: index == _savedMedications.length - 1,
+                onConfirm: med['status'] == 'todo'
+                    ? () => _confirmMedication(med['id'])
+                    : null,
+              );
+            },
+          ),
         ),
       ],
     ];

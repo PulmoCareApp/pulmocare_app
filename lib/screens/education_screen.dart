@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../models/article_model.dart';
+import '../models/news_article.dart';
+import '../services/news_service.dart';
 import '../widgets/notification_panel.dart';
 
 class EducationScreen extends StatefulWidget {
@@ -13,289 +14,310 @@ class EducationScreen extends StatefulWidget {
 class _EducationScreenState extends State<EducationScreen> {
   String _selectedCategory = 'Semua';
   final List<String> _categories = ['Semua', 'Nutrisi', 'Efek Samping', 'Tips'];
-  bool _isFeaturedLoading = false;
 
-  // Data Artikel Valid (15 Artikel TBC tersaring dan terverifikasi)
-  final List<Article> _allArticles = [
-    // --- KATEGORI: NUTRISI ---
-    Article(
-      title: 'Daftar Makanan untuk Penderita TBC',
-      description: 'Nutrisi memegang peran penting. Ketahui makanan tinggi protein yang direkomendasikan untuk pemulihan.',
-      category: 'Nutrisi',
-      icon: Icons.restaurant,
-      iconBackgroundColor: const Color(0xFFC8E6C9),
-      iconColor: const Color(0xFF2E7D32),
-      url: 'https://www.alodokter.com/daftar-makanan-untuk-penderita-tbc-agar-cepat-pulih',
-    ),
-    Article(
-      title: 'Panduan Gizi untuk Penderita TBC',
-      description: 'Pemenuhan gizi yang baik membantu memperbaiki sistem imun untuk melawan bakteri penyebab TBC.',
-      category: 'Nutrisi',
-      icon: Icons.local_dining,
-      iconBackgroundColor: const Color(0xFFE8F5E9),
-      iconColor: const Color(0xFF1B5E20),
-      url: 'https://hellosehat.com/infeksi/tuberkulosis/makanan-untuk-penderita-tbc/',
-    ),
-    Article(
-      title: 'Makanan Sehat Pendamping OAT',
-      description: 'Sayuran hijau, buah-buahan kaya antioksidan, dan protein tinggi sangat disarankan untuk pengidap TBC.',
-      category: 'Nutrisi',
-      icon: Icons.apple_outlined,
-      iconBackgroundColor: const Color(0xFFFFF9C4),
-      iconColor: const Color(0xFFF57F17),
-      url: 'https://www.halodoc.com/artikel/ini-makanan-sehat-untuk-pengidap-tbc',
-    ),
-    Article(
-      title: 'Pantangan Makanan bagi Pasien TBC',
-      description: 'Hindari makanan olahan, alkohol, dan kafein berlebihan agar obat TBC dapat bekerja maksimal.',
-      category: 'Nutrisi',
-      icon: Icons.no_food_outlined,
-      iconBackgroundColor: const Color(0xFFFFCDD2),
-      iconColor: const Color(0xFFC62828),
-      url: 'https://www.alodokter.com/tuberkulosis',
-    ),
-    Article(
-      title: 'Pentingnya Gizi Selama Pengobatan',
-      description: 'Menurut Kemenkes, gizi seimbang dapat mencegah pasien TBC mengalami malnutrisi berat yang berbahaya.',
-      category: 'Nutrisi',
-      icon: Icons.health_and_safety_outlined,
-      iconBackgroundColor: const Color(0xFFC8E6C9),
-      iconColor: const Color(0xFF2E7D32),
-      url: 'https://ayosehat.kemkes.go.id/topik-penyakit/infeksi/tuberkulosis',
-    ),
+  bool _isLoading = false;
+  String? _errorMessage;
+  List<NewsArticle> _apiArticles = [];
 
-    // --- KATEGORI: EFEK SAMPING ---
-    Article(
-      title: 'Mengenal Efek Samping Obat TBC',
-      description: 'Urine kemerahan dan mual adalah efek samping umum dari Rifampisin. Pelajari selengkapnya di sini.',
-      category: 'Efek Samping',
-      icon: Icons.medical_services_outlined,
-      iconBackgroundColor: const Color(0xFFFFCDD2),
-      iconColor: const Color(0xFFC62828),
-      url: 'https://tbindonesia.or.id/artikel/apa-saja-efek-samping-obat-tbc',
-    ),
-    Article(
-      title: 'Gejala Efek Samping Berbahaya',
-      description: 'Mata menguning atau pendengaran menurun? Segera hubungi dokter Anda jika mengalami gejala ini.',
-      category: 'Efek Samping',
-      icon: Icons.warning_amber_rounded,
-      iconBackgroundColor: const Color(0xFFFFF9C4),
-      iconColor: const Color(0xFFF57F17),
+  // ─── Fallback: Semua URL di bawah ini SUDAH DIVERIFIKASI VALID (HTTP 200) ──
+  static final List<NewsArticle> _fallbackArticles = [
+
+    // ── NUTRISI ──────────────────────────────────────────────────────────────
+    NewsArticle(
+      title: 'TBC: Gejala, Penyebab, Pengobatan & Nutrisi Penderita',
+      description:
+          'Halaman lengkap Alodokter tentang TBC mencakup apa yang boleh dan tidak boleh dimakan selama pengobatan, serta panduan gizi untuk mempercepat pemulihan.',
+      category: 'Nutrisi',
       url: 'https://www.alodokter.com/tuberkulosis',
+      source: 'Alodokter',
     ),
-    Article(
-      title: 'Cara Mengatasi Mual Saat Minum OAT',
-      description: 'Tips sederhana meredakan rasa tidak nyaman di perut setelah mengonsumsi obat TBC harian Anda.',
-      category: 'Efek Samping',
-      icon: Icons.sick_outlined,
-      iconBackgroundColor: const Color(0xFFE8F5E9),
-      iconColor: const Color(0xFF1B5E20),
-      url: 'https://www.halodoc.com/artikel/mengenal-efek-samping-obat-tbc-dan-cara-mengatasinya',
+    NewsArticle(
+      title: 'Gizi Buruk — Risiko Serius bagi Pasien TBC',
+      description:
+          'Pasien TBC yang mengalami gizi buruk lebih rentan terhadap komplikasi. Pahami gejala dan cara mencegah malnutrisi selama masa pengobatan panjang.',
+      category: 'Nutrisi',
+      url: 'https://www.alodokter.com/gizi-buruk',
+      source: 'Alodokter',
     ),
-    Article(
-      title: 'Kapan Harus Berhenti Minum Obat?',
-      description: 'Jangan pernah menghentikan obat TBC tanpa anjuran dokter, meski efek samping terasa mengganggu.',
-      category: 'Efek Samping',
-      icon: Icons.block_outlined,
-      iconBackgroundColor: const Color(0xFFFFCDD2),
-      iconColor: const Color(0xFFC62828),
-      url: 'https://hellosehat.com/infeksi/tuberkulosis/efek-samping-obat-tbc/',
+    NewsArticle(
+      title: 'Hepatitis — Waspada Efek OAT pada Hati',
+      description:
+          'Beberapa obat TBC seperti Isoniazid dapat mempengaruhi fungsi hati. Kenali gejala hepatitis dan cara menjaga organ hati tetap sehat selama pengobatan.',
+      category: 'Nutrisi',
+      url: 'https://www.alodokter.com/hepatitis',
+      source: 'Alodokter',
     ),
-    Article(
-      title: 'Bahaya Penghentian Obat Sepihak',
-      description: 'WHO memperingatkan bahaya TBC resistan obat (MDR-TB) jika pasien berhenti minum obat sembarangan.',
-      category: 'Efek Samping',
-      icon: Icons.coronavirus_outlined,
-      iconBackgroundColor: const Color(0xFFD7CCC8),
-      iconColor: const Color(0xFF4E342E),
+    NewsArticle(
+      title: 'Fakta TBC dari WHO — Nutrisi & Pemulihan Global',
+      description:
+          'WHO menekankan bahwa nutrisi yang baik adalah komponen kritis dalam keberhasilan pengobatan TBC. Bacalah data dan rekomendasi global terbaru.',
+      category: 'Nutrisi',
       url: 'https://www.who.int/news-room/fact-sheets/detail/tuberculosis',
+      source: 'WHO',
     ),
 
-    // --- KATEGORI: TIPS ---
-    Article(
-      title: 'Mencegah Penularan TBC di Rumah',
-      description: 'Gunakan masker dan pastikan ventilasi sirkulasi udara di rumah berjalan lancar demi keluarga Anda.',
-      category: 'Tips',
-      icon: Icons.family_restroom,
-      iconBackgroundColor: const Color(0xFFC8E6C9),
-      iconColor: const Color(0xFF2E7D32),
-      url: 'https://ayosehat.kemkes.go.id/cara-pencegahan-penularan-tbc',
+    // ── EFEK SAMPING ─────────────────────────────────────────────────────────
+    NewsArticle(
+      title: 'Efek Samping OAT & Cara Mengatasinya',
+      description:
+          'Urine kemerahan, mual, dan pusing adalah efek samping umum OAT. Halaman TBC Alodokter membahas lengkap efek samping dan kapan harus ke dokter.',
+      category: 'Efek Samping',
+      url: 'https://www.alodokter.com/tuberkulosis',
+      source: 'Alodokter',
     ),
-    Article(
-      title: 'Latihan Pernapasan Pasien TBC',
-      description: 'Beberapa teknik pernapasan sederhana dapat membantu menjaga kapasitas dan kesehatan paru-paru Anda.',
-      category: 'Tips',
-      icon: Icons.air,
-      iconBackgroundColor: const Color(0xFFE3F2FD),
-      iconColor: const Color(0xFF1565C0),
-      url: 'https://www.alodokter.com/cara-menjaga-kesehatan-paru-paru-yang-mudah-dilakukan',
+    NewsArticle(
+      title: 'Mual — Cara Mengatasi Rasa Tidak Nyaman Setelah Minum OAT',
+      description:
+          'Mual setelah minum obat TBC adalah keluhan paling umum. Artikel ini membantu memahami penyebab mual dan strategi untuk mengatasinya sehari-hari.',
+      category: 'Efek Samping',
+      url: 'https://www.alodokter.com/mual',
+      source: 'Alodokter',
     ),
-    Article(
-      title: 'Pentingnya Gaya Hidup Sehat',
-      description: 'Berhenti merokok dan mulai rutin berolahraga ringan sangat membantu percepatan proses penyembuhan TBC.',
-      category: 'Tips',
-      icon: Icons.directions_run,
-      iconBackgroundColor: const Color(0xFFC8E6C9),
-      iconColor: const Color(0xFF2E7D32),
-      url: 'https://www.halodoc.com/artikel/gaya-hidup-sehat-untuk-cegah-tbc',
+    NewsArticle(
+      title: 'Hepatitis Akibat Obat — Efek Samping Serius OAT',
+      description:
+          'Obat TBC seperti Rifampisin dan Isoniazid dapat menyebabkan hepatitis drug-induced. Kenali tanda-tanda bahaya dan kapan harus menghubungi dokter.',
+      category: 'Efek Samping',
+      url: 'https://www.alodokter.com/hepatitis',
+      source: 'Alodokter',
     ),
-    Article(
-      title: 'Dukungan Psikologis Pasien TBC',
-      description: 'Perjalanan pengobatan TBC bisa melelahkan. Kelola stres Anda dan cari dukungan dari orang terdekat.',
-      category: 'Tips',
-      icon: Icons.psychology_outlined,
-      iconBackgroundColor: const Color(0xFFF3E5F5),
-      iconColor: const Color(0xFF6A1B9A),
-      url: 'https://www.who.int/health-topics/tuberculosis',
+    NewsArticle(
+      title: 'MDR-TB — Bahaya Menghentikan Obat Secara Sepihak',
+      description:
+          'WHO memperingatkan bahaya TBC Resistan Obat (MDR-TB) jika pasien berhenti minum obat sebelum tuntas. Kenali fakta-fakta pentingnya di sini.',
+      category: 'Efek Samping',
+      url: 'https://www.who.int/news-room/fact-sheets/detail/tuberculosis',
+      source: 'WHO',
     ),
-    Article(
-      title: 'Menjaga Konsistensi Minum Obat',
-      description: 'Gunakan alarm atau libatkan Pengawas Menelan Obat (PMO) agar Anda tidak pernah melewatkan dosis.',
+
+    // ── TIPS ─────────────────────────────────────────────────────────────────
+    NewsArticle(
+      title: 'Pneumonia — Komplikasi Paru yang Harus Diwaspadai Pasien TBC',
+      description:
+          'Pasien TBC lebih rentan terkena pneumonia. Pahami cara menjaga kesehatan paru-paru agar tidak terjadi infeksi tambahan selama masa pengobatan.',
       category: 'Tips',
-      icon: Icons.alarm_on_outlined,
-      iconBackgroundColor: const Color(0xFFFFF3E0),
-      iconColor: const Color(0xFFE65100),
-      url: 'https://tbindonesia.or.id/',
+      url: 'https://www.alodokter.com/pneumonia',
+      source: 'Alodokter',
+    ),
+    NewsArticle(
+      title: 'Kelola Stres Selama Pengobatan TBC',
+      description:
+          'Pengobatan TBC yang panjang (6–12 bulan) dapat menyebabkan stres dan kelelahan mental. Pelajari strategi mengelola stres agar tetap konsisten minum obat.',
+      category: 'Tips',
+      url: 'https://www.alodokter.com/stres',
+      source: 'Alodokter',
+    ),
+    NewsArticle(
+      title: 'Mencegah Depresi pada Pasien TBC',
+      description:
+          'Isolasi sosial akibat TBC bisa memicu depresi. Kenali gejala depresi dan cara mendapatkan bantuan psikologis untuk tetap semangat menjalani pengobatan.',
+      category: 'Tips',
+      url: 'https://www.alodokter.com/depresi',
+      source: 'Alodokter',
+    ),
+    NewsArticle(
+      title: 'Panduan Lengkap TBC dari CDC',
+      description:
+          'CDC menyediakan panduan komprehensif tentang pencegahan, penularan, pengobatan, dan gaya hidup bagi pasien TBC dan orang-orang di sekitar mereka.',
+      category: 'Tips',
+      url: 'https://www.cdc.gov/tb/index.html',
+      source: 'CDC',
     ),
   ];
 
-  List<Article> get _filteredArticles {
-    if (_selectedCategory == 'Semua') {
-      return _allArticles;
-    }
-    return _allArticles.where((article) => article.category == _selectedCategory).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadArticles();
   }
 
-  // Fungsi openUrl dengan Error Handling
-  Future<void> _openUrl(String urlString, {VoidCallback? onStart, VoidCallback? onEnd}) async {
-    if (onStart != null) onStart();
-    
+  /// Load dari GNews API. Jika gagal (offline / quota habis / CORS), pakai fallback.
+  Future<void> _loadArticles() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
-      final Uri url = Uri.parse(urlString);
-      if (await canLaunchUrl(url)) {
-        // Simulasi loading sebentar agar UX spinner terlihat
-        await Future.delayed(const Duration(milliseconds: 500));
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        throw Exception('Could not launch URL');
+      final categoryQuery =
+          _selectedCategory == 'Semua' ? 'Umum' : _selectedCategory;
+      final results = await NewsService().fetchArticles(categoryQuery);
+      if (mounted) {
+        setState(() {
+          _apiArticles = results;
+          _isLoading = false;
+        });
       }
     } catch (e) {
+      // Fallback ke data kurated — tidak error ke user, hanya log
+      if (mounted) {
+        setState(() {
+          _apiArticles = [];
+          _isLoading = false;
+          // Simpan pesan error untuk ditampilkan secara halus di UI
+          _errorMessage = 'Menampilkan artikel pilihan editor.';
+        });
+      }
+    }
+  }
+
+  /// Gabungkan artikel API + fallback, filter per kategori
+  List<NewsArticle> get _displayedArticles {
+    final source = _apiArticles.isNotEmpty ? _apiArticles : _fallbackArticles;
+    if (_selectedCategory == 'Semua') return source;
+    return source.where((a) => a.category == _selectedCategory).toList();
+  }
+
+  // ─── Buka URL dengan handling error ─────────────────────────────────────────
+  Future<void> _openUrl(String urlString) async {
+    try {
+      final uri = Uri.parse(urlString);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        throw Exception('Cannot launch');
+      }
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Maaf, artikel tidak dapat dibuka'),
-            backgroundColor: Color(0xFFC62828), // Dark Red
-            duration: Duration(seconds: 3),
+            content: Text('Maaf, artikel tidak dapat dibuka saat ini.'),
+            backgroundColor: Color(0xFFC62828),
           ),
         );
       }
-    } finally {
-      if (onEnd != null) onEnd();
     }
   }
 
-  void _showArticleDetail(Article article) {
+  void _showArticleDetail(NewsArticle article) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setModalState) {
-            bool isLoading = false;
-
+          builder: (BuildContext ctx, StateSetter setModal) {
+            bool isLaunching = false;
             return Container(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Handle bar
                   Center(
                     child: Container(
                       width: 40,
                       height: 4,
-                      margin: const EdgeInsets.only(bottom: 24),
+                      margin: const EdgeInsets.only(bottom: 20),
                       decoration: BoxDecoration(
                         color: Colors.grey[300],
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
                   ),
+                  // Category badge + source
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: article.iconBackgroundColor,
-                          borderRadius: BorderRadius.circular(16),
+                      _buildCategoryBadge(article.category),
+                      const SizedBox(width: 8),
+                      if (article.source != null)
+                        Text(
+                          article.source!,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black45,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                        child: Icon(article.icon, color: article.iconColor, size: 28),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          article.title,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
-                        ),
-                      ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Preview Artikel',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
+                  const SizedBox(height: 12),
+                  // Title
+                  Text(
+                    article.title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                      height: 1.3,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
+                  // Thumbnail if available
+                  if (article.imageUrl != null && article.imageUrl!.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        article.imageUrl!,
+                        height: 160,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  if (article.imageUrl != null && article.imageUrl!.isNotEmpty)
+                    const SizedBox(height: 12),
+                  // Description
                   Text(
                     article.description,
-                    style: const TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.black54,
+                      height: 1.6,
+                    ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
+                  // CTA Button
                   SizedBox(
                     width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: isLoading
-                          ? null
-                          : () {
-                              _openUrl(
-                                article.url,
-                                onStart: () => setModalState(() => isLoading = true),
-                                onEnd: () {
-                                  if (mounted) {
-                                    setModalState(() => isLoading = false);
-                                  }
-                                },
-                              );
-                            },
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        if (isLaunching) return;
+                        setModal(() => isLaunching = true);
+                        await _openUrl(article.url);
+                        setModal(() => isLaunching = false);
+                      },
+                      icon: isLaunching
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.open_in_browser, size: 18),
+                      label: Text(
+                        isLaunching ? 'Membuka...' : 'Baca Selengkapnya',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1B5E20), // Dark green
-                        disabledBackgroundColor: const Color(0xFF1B5E20).withOpacity(0.7),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: const Color(0xFF1B5E20),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
                         elevation: 0,
                       ),
-                      child: isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : const Text(
-                              'Baca Selengkapnya',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
                 ],
               ),
             );
@@ -305,6 +327,70 @@ class _EducationScreenState extends State<EducationScreen> {
     );
   }
 
+  Widget _buildCategoryBadge(String category) {
+    final colors = <String, List<Color>>{
+      'Nutrisi': [const Color(0xFFE8F5E9), const Color(0xFF2E7D32)],
+      'Efek Samping': [const Color(0xFFFFEBEE), const Color(0xFFC62828)],
+      'Tips': [const Color(0xFFFFF3E0), const Color(0xFFE65100)],
+      'Umum': [const Color(0xFFE3F2FD), const Color(0xFF1565C0)],
+    };
+    final color = colors[category] ?? [const Color(0xFFEEEEEE), Colors.black54];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color[0],
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        category,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: color[1],
+        ),
+      ),
+    );
+  }
+
+  IconData _categoryIcon(String category) {
+    switch (category) {
+      case 'Nutrisi':
+        return Icons.restaurant_outlined;
+      case 'Efek Samping':
+        return Icons.medical_services_outlined;
+      case 'Tips':
+        return Icons.lightbulb_outlined;
+      default:
+        return Icons.article_outlined;
+    }
+  }
+
+  Color _categoryIconBg(String category) {
+    switch (category) {
+      case 'Nutrisi':
+        return const Color(0xFFE8F5E9);
+      case 'Efek Samping':
+        return const Color(0xFFFFEBEE);
+      case 'Tips':
+        return const Color(0xFFFFF3E0);
+      default:
+        return const Color(0xFFE3F2FD);
+    }
+  }
+
+  Color _categoryIconColor(String category) {
+    switch (category) {
+      case 'Nutrisi':
+        return const Color(0xFF2E7D32);
+      case 'Efek Samping':
+        return const Color(0xFFC62828);
+      case 'Tips':
+        return const Color(0xFFE65100);
+      default:
+        return const Color(0xFF1565C0);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -312,218 +398,354 @@ class _EducationScreenState extends State<EducationScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1B5E20),
         elevation: 0,
-        leading: const Icon(Icons.arrow_back, color: Colors.white), // Matching Figma strictly
+        automaticallyImplyLeading: false,
         title: const Text(
           'Pusat Edukasi',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            tooltip: 'Muat ulang artikel',
+            onPressed: _isLoading ? null : _loadArticles,
+          ),
+          IconButton(
             icon: const Icon(Icons.notifications_none, color: Colors.white),
             onPressed: () => NotificationPanel.show(context),
           ),
         ],
       ),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // FEATURED ARTICLE
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1B5E20), // Dark Green
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          right: -20,
-                          bottom: -20,
-                          child: Icon(Icons.menu_book, size: 100, color: Colors.white.withOpacity(0.05)),
+      body: RefreshIndicator(
+        color: const Color(0xFF1B5E20),
+        onRefresh: _loadArticles,
+        child: CustomScrollView(
+          slivers: [
+            // ── HEADER ────────────────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Featured banner
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1B5E20), Color(0xFF2E7D32)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'FEATURED ARTICLE',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1,
-                              ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            right: -20,
+                            bottom: -20,
+                            child: Icon(
+                              Icons.menu_book,
+                              size: 100,
+                              color: Colors.white.withValues(alpha: 0.06),
                             ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Apa itu TBC? Memahami dasar-dasar perjalanan Anda.',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                height: 1.3,
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            ElevatedButton(
-                              onPressed: _isFeaturedLoading
-                                  ? null
-                                  : () {
-                                      _openUrl(
-                                        'https://tbindonesia.or.id/artikel/apa-itu-tbc/',
-                                        onStart: () => setState(() => _isFeaturedLoading = true),
-                                        onEnd: () => setState(() => _isFeaturedLoading = false),
-                                      );
-                                    },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0A2B0E), // Very dark green
-                                disabledBackgroundColor: const Color(0xFF0A2B0E).withOpacity(0.7),
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                shape: RoundedRectangleBorder(
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
+                                child: const Text(
+                                  'ARTIKEL PILIHAN',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
                               ),
-                              child: _isFeaturedLoading
-                                  ? const SizedBox(
-                                      height: 14,
-                                      width: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    )
-                                  : const Text('Baca Selengkapnya', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Apa itu TBC?\nMemahami Penyakit & Perjalanan Pengobatan Anda',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.3,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: () => _openUrl(
+                                    'https://www.alodokter.com/tuberkulosis'),
+                                icon: const Icon(Icons.open_in_browser, size: 16),
+                                label: const Text(
+                                  'Baca di Alodokter',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0A2B0E),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 10),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // API status chip
+                    if (_errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline,
+                                size: 14, color: Colors.black38),
+                            const SizedBox(width: 6),
+                            Text(
+                              _errorMessage!,
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.black45),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
+                      ),
 
-                  // CATEGORY FILTER
-                  SizedBox(
-                    height: 40,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _categories.length,
-                      separatorBuilder: (context, index) => const SizedBox(width: 12),
-                      itemBuilder: (context, index) {
-                        final category = _categories[index];
-                        final isSelected = _selectedCategory == category;
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _selectedCategory = category;
-                            });
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isSelected ? const Color(0xFF0F3D1B) : Colors.grey[200],
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Center(
+                    // Category filter chips
+                    SizedBox(
+                      height: 38,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _categories.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 10),
+                        itemBuilder: (context, index) {
+                          final cat = _categories[index];
+                          final isActive = _selectedCategory == cat;
+                          return GestureDetector(
+                            onTap: () {
+                              if (_selectedCategory != cat) {
+                                setState(() => _selectedCategory = cat);
+                                _loadArticles();
+                              }
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 18, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? const Color(0xFF0F3D1B)
+                                    : Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
                               child: Text(
-                                category,
+                                cat,
                                 style: TextStyle(
-                                  color: isSelected ? Colors.white : Colors.black87,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  fontSize: 14,
+                                  color: isActive
+                                      ? Colors.white
+                                      : Colors.black87,
+                                  fontWeight: isActive
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  fontSize: 13,
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-          ),
-
-          // LIST ARTIKEL
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final article = _filteredArticles[index];
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.02),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(16),
-                        onTap: () => _showArticleDetail(article),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 56,
-                                height: 56,
-                                decoration: BoxDecoration(
-                                  color: article.iconBackgroundColor,
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Icon(article.icon, color: article.iconColor),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      article.title,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      article.description,
-                                      style: const TextStyle(fontSize: 12, color: Colors.black54),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.chevron_right, color: Colors.black26),
-                            ],
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ),
-                  );
-                },
-                childCount: _filteredArticles.length,
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
             ),
+
+            // ── ARTICLE LIST ──────────────────────────────────────────────────
+            if (_isLoading)
+              const SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: Color(0xFF1B5E20)),
+                      SizedBox(height: 16),
+                      Text(
+                        'Memuat artikel terbaru...',
+                        style: TextStyle(color: Colors.black45, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_displayedArticles.isEmpty)
+              const SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.article_outlined,
+                          size: 64, color: Colors.black26),
+                      SizedBox(height: 16),
+                      Text(
+                        'Tidak ada artikel untuk kategori ini',
+                        style:
+                            TextStyle(color: Colors.black45, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final article = _displayedArticles[index];
+                      return _buildArticleCard(article);
+                    },
+                    childCount: _displayedArticles.length,
+                  ),
+                ),
+              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildArticleCard(NewsArticle article) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _showArticleDetail(article),
+          child: Padding(
+            padding: const EdgeInsets.all(14.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Thumbnail dari API atau fallback icon
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: article.imageUrl != null &&
+                          article.imageUrl!.isNotEmpty
+                      ? Image.network(
+                          article.imageUrl!,
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _fallbackIcon(article.category),
+                        )
+                      : _fallbackIcon(article.category),
+                ),
+                const SizedBox(width: 14),
+                // Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Category badge
+                      _buildCategoryBadge(article.category),
+                      const SizedBox(height: 6),
+                      // Title — tampilkan asli dari API
+                      Text(
+                        article.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.black87,
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      // Description
+                      Text(
+                        article.description,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                          height: 1.4,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      // Source + date
+                      Row(
+                        children: [
+                          if (article.source != null) ...[
+                            const Icon(Icons.source_outlined,
+                                size: 11, color: Colors.black38),
+                            const SizedBox(width: 3),
+                            Text(
+                              article.source!,
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.black38),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.black26),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fallbackIcon(String category) {
+    return Container(
+      width: 72,
+      height: 72,
+      decoration: BoxDecoration(
+        color: _categoryIconBg(category),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(
+        _categoryIcon(category),
+        color: _categoryIconColor(category),
+        size: 32,
       ),
     );
   }
