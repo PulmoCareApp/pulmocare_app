@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 class SelectDaysScreen extends StatefulWidget {
-  const SelectDaysScreen({Key? key}) : super(key: key);
+  final List<String>? initialSelectedDays;
+  const SelectDaysScreen({Key? key, this.initialSelectedDays}) : super(key: key);
 
   @override
   State<SelectDaysScreen> createState() => _SelectDaysScreenState();
@@ -9,16 +10,24 @@ class SelectDaysScreen extends StatefulWidget {
 
 class _SelectDaysScreenState extends State<SelectDaysScreen> {
   bool _selectAll = false;
-  
-  final Map<String, bool> _days = {
-    'Senin': true,
-    'Selasa': false,
-    'Rabu': true,
-    'Kamis': false,
-    'Jumat': true,
-    'Sabtu': false,
-    'Minggu': false,
-  };
+
+  late final Map<String, bool> _days;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialSelectedDays ?? [];
+    _days = {
+      'Senin': initial.contains('Senin'),
+      'Selasa': initial.contains('Selasa'),
+      'Rabu': initial.contains('Rabu'),
+      'Kamis': initial.contains('Kamis'),
+      'Jumat': initial.contains('Jumat'),
+      'Sabtu': initial.contains('Sabtu'),
+      'Minggu': initial.contains('Minggu'),
+    };
+    _selectAll = _days.values.every((v) => v);
+  }
 
   void _toggleAll(bool value) {
     setState(() {
@@ -35,6 +44,9 @@ class _SelectDaysScreenState extends State<SelectDaysScreen> {
       _selectAll = _days.values.every((v) => v);
     });
   }
+
+  List<String> get _selectedDays =>
+      _days.entries.where((e) => e.value).map((e) => e.key).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -78,9 +90,10 @@ class _SelectDaysScreenState extends State<SelectDaysScreen> {
 
             // Pilih Semua Hari
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
-                color: const Color(0xFFF0F5F1), // Very light greyish green
+                color: const Color(0xFFF0F5F1),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Row(
@@ -90,11 +103,12 @@ class _SelectDaysScreenState extends State<SelectDaysScreen> {
                     children: [
                       Container(
                         padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFC8E6C9),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFC8E6C9),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.done_all, color: Color(0xFF1B5E20), size: 16),
+                        child: const Icon(Icons.done_all,
+                            color: Color(0xFF1B5E20), size: 16),
                       ),
                       const SizedBox(width: 12),
                       const Text(
@@ -124,11 +138,15 @@ class _SelectDaysScreenState extends State<SelectDaysScreen> {
               final isSelected = _days[day]!;
               return GestureDetector(
                 onTap: () => _toggleDay(day),
-                child: Container(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
                   margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 18),
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFFC8E6C9) : Colors.white,
+                    color: isSelected
+                        ? const Color(0xFFC8E6C9)
+                        : Colors.white,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
@@ -138,13 +156,19 @@ class _SelectDaysScreenState extends State<SelectDaysScreen> {
                         day,
                         style: TextStyle(
                           fontSize: 16,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                           color: Colors.black87,
                         ),
                       ),
                       Icon(
-                        Icons.check_circle,
-                        color: isSelected ? const Color(0xFF0F3D1B) : Colors.black12,
+                        isSelected
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        color: isSelected
+                            ? const Color(0xFF0F3D1B)
+                            : Colors.black26,
                       ),
                     ],
                   ),
@@ -160,7 +184,8 @@ class _SelectDaysScreenState extends State<SelectDaysScreen> {
           width: double.infinity,
           child: ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
+              // Return selected days to the caller
+              Navigator.pop(context, _selectedDays);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0F3D1B),
@@ -169,9 +194,11 @@ class _SelectDaysScreenState extends State<SelectDaysScreen> {
                 borderRadius: BorderRadius.circular(24),
               ),
             ),
-            child: const Text(
-              'Simpan Pilihan',
-              style: TextStyle(
+            child: Text(
+              _selectedDays.isEmpty
+                  ? 'Simpan Pilihan'
+                  : 'Simpan (${_selectedDays.length} hari)',
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontSize: 16,

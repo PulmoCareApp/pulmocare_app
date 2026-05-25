@@ -46,7 +46,33 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login gagal: ${e.toString()}')));
+          final errorStr = e.toString().toLowerCase();
+
+          if (errorStr.contains('email not confirmed') ||
+              errorStr.contains('email_not_confirmed')) {
+            // Kirim ulang email konfirmasi otomatis
+            _showEmailNotConfirmedDialog();
+            return;
+          } else if (errorStr.contains('invalid login credentials') ||
+              errorStr.contains('invalid_credentials')) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Email atau kata sandi salah. Periksa kembali.'),
+              backgroundColor: Colors.red[700],
+              behavior: SnackBarBehavior.floating,
+            ));
+          } else if (errorStr.contains('too many requests')) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Terlalu banyak percobaan login. Coba lagi nanti.'),
+              backgroundColor: Colors.orange[700],
+              behavior: SnackBarBehavior.floating,
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Login gagal: ${e.toString()}'),
+              backgroundColor: Colors.red[700],
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
         }
       } finally {
         if (mounted) {
@@ -54,6 +80,137 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     }
+  }
+
+  void _showEmailNotConfirmedDialog() {
+    final email = _emailController.text.trim();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          bool isSending = false;
+          bool hasSent = false;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: const [
+                Icon(Icons.mark_email_unread_outlined, color: Color(0xFF2E7D32), size: 26),
+                SizedBox(width: 8),
+                Text('Verifikasi Email', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Email $email belum diverifikasi.',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F5E9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        '📧 Cara verifikasi:',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B5E20), fontSize: 13),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        '1. Klik tombol "Kirim Ulang Email" di bawah\n'
+                        '2. Buka inbox email Anda\n'
+                        '3. Klik link konfirmasi\n'
+                        '4. Kembali dan login',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF1B5E20), height: 1.7),
+                      ),
+                    ],
+                  ),
+                ),
+                if (hasSent) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.green.shade300),
+                    ),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Email konfirmasi terkirim! Cek inbox Anda.',
+                            style: TextStyle(fontSize: 12, color: Colors.green),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Tutup', style: TextStyle(color: Colors.black45)),
+              ),
+              StatefulBuilder(
+                builder: (ctx2, setSendState) => ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2E7D32),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: isSending
+                      ? null
+                      : () async {
+                          setSendState(() => isSending = true);
+                          try {
+                            await Supabase.instance.client.auth.resend(
+                              type: OtpType.signup,
+                              email: email,
+                            );
+                            setSendState(() {
+                              isSending = false;
+                              hasSent = true;
+                            });
+                            setDialogState(() => hasSent = true);
+                          } catch (e) {
+                            setSendState(() => isSending = false);
+                            if (ctx2.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text('Gagal kirim email: ${e.toString()}'),
+                                backgroundColor: Colors.red[700],
+                              ));
+                            }
+                          }
+                        },
+                  child: isSending
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Kirim Ulang Email',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   @override

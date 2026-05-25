@@ -49,19 +49,99 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
         if (mounted) {
           if (response.session != null) {
+            // Langsung masuk jika konfirmasi email dinonaktifkan
             Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (context) => const MainNavigation()),
               (route) => false,
             );
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pendaftaran berhasil! Silakan login.')));
-            Navigator.pushReplacementNamed(context, '/login');
+            // Email konfirmasi diperlukan — tampilkan dialog informatif
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Row(
+                  children: const [
+                    Icon(Icons.mark_email_read_outlined, color: Color(0xFF2E7D32), size: 28),
+                    SizedBox(width: 10),
+                    Text(
+                      'Cek Email Anda',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Pendaftaran berhasil! Kami mengirim link konfirmasi ke:',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _emailController.text.trim(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1B5E20),
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        '📧 Buka email Anda → Klik link "Confirm your email address" → Kembali ke app → Login',
+                        style: TextStyle(fontSize: 13, color: Color(0xFF1B5E20), height: 1.5),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Catatan: Pastikan link diklik di browser yang sama dengan aplikasi ini.',
+                      style: TextStyle(fontSize: 11, color: Colors.black38, fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      Navigator.pushReplacementNamed(context, '/login');
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2E7D32),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'Mengerti, ke Halaman Login',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
           }
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Daftar gagal: ${e.toString()}')));
+          String errorMsg = e.toString();
+          if (errorMsg.contains('User already registered')) {
+            errorMsg = 'Email ini sudah terdaftar. Silakan login atau gunakan email lain.';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(errorMsg),
+            backgroundColor: Colors.red[700],
+            behavior: SnackBarBehavior.floating,
+          ));
         }
       } finally {
         if (mounted) {

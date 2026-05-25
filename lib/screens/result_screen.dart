@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'main_navigation.dart';
 
 class ResultScreen extends StatelessWidget {
   const ResultScreen({Key? key}) : super(key: key);
+
 
   @override
   Widget build(BuildContext context) {
@@ -173,7 +175,11 @@ class ResultScreen extends StatelessWidget {
             // Back to Home Button
             ElevatedButton(
               onPressed: () {
-                Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false);
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const MainNavigation()),
+                  (route) => false,
+                );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1B5E20),

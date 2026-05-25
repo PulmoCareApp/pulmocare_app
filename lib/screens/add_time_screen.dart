@@ -1,7 +1,75 @@
 import 'package:flutter/material.dart';
 
-class AddTimeScreen extends StatelessWidget {
-  const AddTimeScreen({Key? key}) : super(key: key);
+class AddTimeScreen extends StatefulWidget {
+  final String? initialTime; // format "HH:mm"
+  const AddTimeScreen({Key? key, this.initialTime}) : super(key: key);
+
+  @override
+  State<AddTimeScreen> createState() => _AddTimeScreenState();
+}
+
+class _AddTimeScreenState extends State<AddTimeScreen> {
+  late int _selectedHour;
+  late int _selectedMinute;
+  late bool _isAM;
+
+  final FixedExtentScrollController _hourController =
+      FixedExtentScrollController();
+  final FixedExtentScrollController _minuteController =
+      FixedExtentScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Parse initial time if provided
+    if (widget.initialTime != null && widget.initialTime!.contains(':')) {
+      final parts = widget.initialTime!.split(':');
+      int h = int.tryParse(parts[0]) ?? 8;
+      int m = int.tryParse(parts[1]) ?? 0;
+      _isAM = h < 12;
+      _selectedHour = h % 12 == 0 ? 12 : h % 12;
+      _selectedMinute = m;
+    } else {
+      _selectedHour = 8;
+      _selectedMinute = 0;
+      _isAM = true;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hourController.jumpToItem(_selectedHour - 1);
+      _minuteController.jumpToItem(_selectedMinute);
+    });
+  }
+
+  @override
+  void dispose() {
+    _hourController.dispose();
+    _minuteController.dispose();
+    super.dispose();
+  }
+
+  String get _displayTime {
+    final hStr = _selectedHour.toString().padLeft(2, '0');
+    final mStr = _selectedMinute.toString().padLeft(2, '0');
+    final period = _isAM ? 'AM' : 'PM';
+    return '$hStr:$mStr $period';
+  }
+
+  String get _time24h {
+    int h = _selectedHour;
+    if (_isAM && h == 12) h = 0;
+    if (!_isAM && h != 12) h += 12;
+    return '${h.toString().padLeft(2, '0')}:${_selectedMinute.toString().padLeft(2, '0')}';
+  }
+
+  String get _periodLabel {
+    final h24 = int.parse(_time24h.split(':')[0]);
+    if (h24 >= 5 && h24 < 12) return 'Pagi';
+    if (h24 >= 12 && h24 < 17) return 'Siang';
+    if (h24 >= 17 && h24 < 21) return 'Sore';
+    return 'Malam';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,65 +99,131 @@ class AddTimeScreen extends StatelessWidget {
           child: Column(
             children: [
               // Large Time Display
-              const Text(
-                '08:00',
-                style: TextStyle(
-                  fontSize: 72,
-                  fontWeight: FontWeight.w500,
+              Text(
+                _displayTime,
+                style: const TextStyle(
+                  fontSize: 52,
+                  fontWeight: FontWeight.w600,
                   color: Color(0xFF0F3D1B),
                   letterSpacing: 2.0,
                 ),
               ),
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC8E6C9),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _periodLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF0F3D1B),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
               const SizedBox(height: 32),
 
-              // Time Picker Mockup
+              // Time Picker Row
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildScrollColumn(['06', '07', '08', '09', '10'], 2),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Text(':', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  // Hour Picker
+                  _buildWheelPicker(
+                    controller: _hourController,
+                    itemCount: 12,
+                    itemBuilder: (index) => (index + 1).toString().padLeft(2, '0'),
+                    onChanged: (index) {
+                      setState(() => _selectedHour = index + 1);
+                    },
                   ),
-                  _buildScrollColumn(['50', '55', '00', '05', '10'], 2),
-                  const SizedBox(width: 24),
-                  
-                  // AM/PM Toggle
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE0E0E0),
-                      borderRadius: BorderRadius.circular(12),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Text(
+                      ':',
+                      style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0F3D1B)),
                     ),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  // Minute Picker
+                  _buildWheelPicker(
+                    controller: _minuteController,
+                    itemCount: 60,
+                    itemBuilder: (index) => index.toString().padLeft(2, '0'),
+                    onChanged: (index) {
+                      setState(() => _selectedMinute = index);
+                    },
+                  ),
+                  const SizedBox(width: 20),
+
+                  // AM/PM Toggle
+                  Column(
+                    children: [
+                      GestureDetector(
+                        onTap: () => setState(() => _isAM = true),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 14),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0F3D1B),
+                            color: _isAM
+                                ? const Color(0xFF0F3D1B)
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Text('AM', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          child: Text(
+                            'AM',
+                            style: TextStyle(
+                              color: _isAM ? Colors.white : Colors.black38,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          child: const Text('PM', style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)),
+                      ),
+                      GestureDetector(
+                        onTap: () => setState(() => _isAM = false),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: !_isAM
+                                ? const Color(0xFF0F3D1B)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'PM',
+                            style: TextStyle(
+                              color: !_isAM ? Colors.white : Colors.black38,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 32),
 
-              // Time of Day Pills
+              // Time-of-day pills
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildPill('Pagi', true),
-                  const SizedBox(width: 12),
-                  _buildPill('Siang', false),
-                  const SizedBox(width: 12),
-                  _buildPill('Malam', false),
+                  _buildPill('Pagi', _periodLabel == 'Pagi'),
+                  const SizedBox(width: 8),
+                  _buildPill('Siang', _periodLabel == 'Siang'),
+                  const SizedBox(width: 8),
+                  _buildPill('Sore', _periodLabel == 'Sore'),
+                  const SizedBox(width: 8),
+                  _buildPill('Malam', _periodLabel == 'Malam'),
                 ],
               ),
             ],
@@ -105,7 +239,8 @@ class AddTimeScreen extends StatelessWidget {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context);
+                  // Return the selected time in 24h format "HH:mm"
+                  Navigator.pop(context, _time24h);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0F3D1B),
@@ -131,7 +266,7 @@ class AddTimeScreen extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text(
@@ -145,48 +280,64 @@ class AddTimeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildScrollColumn(List<String> items, int selectedIndex) {
-    return Column(
-      children: List.generate(items.length, (index) {
-        bool isSelected = index == selectedIndex;
-        // Simple mock fading effect
-        double opacity = 1.0;
-        if (index == 0 || index == items.length - 1) opacity = 0.0; // Hide edges if we want
-        else if (index == 1 || index == items.length - 2) opacity = 0.3;
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Text(
-            items[index],
-            style: TextStyle(
-              fontSize: isSelected ? 24 : 18,
-              color: isSelected ? Colors.transparent : Colors.black.withOpacity(opacity),
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        );
-      }),
+  Widget _buildWheelPicker({
+    required FixedExtentScrollController controller,
+    required int itemCount,
+    required String Function(int) itemBuilder,
+    required void Function(int) onChanged,
+  }) {
+    return SizedBox(
+      width: 64,
+      height: 160,
+      child: ListWheelScrollView.useDelegate(
+        controller: controller,
+        itemExtent: 48,
+        perspective: 0.003,
+        diameterRatio: 1.5,
+        physics: const FixedExtentScrollPhysics(),
+        onSelectedItemChanged: onChanged,
+        childDelegate: ListWheelChildBuilderDelegate(
+          childCount: itemCount,
+          builder: (context, index) {
+            final isSelected =
+                controller.hasClients && controller.selectedItem == index;
+            return Center(
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 150),
+                style: TextStyle(
+                  fontSize: isSelected ? 28 : 18,
+                  fontWeight:
+                      isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected
+                      ? const Color(0xFF0F3D1B)
+                      : Colors.black38,
+                ),
+                child: Text(itemBuilder(index)),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
   Widget _buildPill(String text, bool isActive) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isActive ? const Color(0xFF0F3D1B) : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: isActive
-            ? null
-            : Border.all(color: Colors.black12),
-        boxShadow: isActive
-            ? [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]
-            : [],
+        border: Border.all(
+          color: isActive ? const Color(0xFF0F3D1B) : Colors.black12,
+        ),
       ),
       child: Text(
         text,
         style: TextStyle(
-          color: isActive ? Colors.black87 : Colors.black54,
+          color: isActive ? Colors.white : Colors.black54,
           fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+          fontSize: 13,
         ),
       ),
     );

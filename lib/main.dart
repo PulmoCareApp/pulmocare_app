@@ -20,6 +20,9 @@ void main() async {
   await Supabase.initialize(
     url: 'https://dkporkkeltewfvwkigep.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrcG9ya2tlbHRld2Z2d2tpZ2VwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDAzMzcsImV4cCI6MjA5NDYxNjMzN30.fQKc2fGeZoxhbPlyed_Bu5twahtYmekmiUcufpbzqzI',
+    authOptions: const FlutterAuthClientOptions(
+      authFlowType: AuthFlowType.implicit,
+    ),
   );
 
   runApp(const PulmoCareApp());
@@ -34,14 +37,21 @@ class PulmoCareApp extends StatefulWidget {
 
 class _PulmoCareAppState extends State<PulmoCareApp> {
   bool _isLoggedIn = false;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
+    // Check initial session (handles email confirmation redirect)
+    final session = Supabase.instance.client.auth.currentSession;
+    _isLoggedIn = session != null;
+    _isLoading = false;
+
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       if (mounted) {
         setState(() {
           _isLoggedIn = data.session != null;
+          _isLoading = false;
         });
       }
     });
@@ -61,7 +71,11 @@ class _PulmoCareAppState extends State<PulmoCareApp> {
           primary: const Color(0xFF2E7D32),
         ),
       ),
-      home: _isLoggedIn ? const MainNavigation() : const LoginScreen(),
+      home: _isLoading
+          ? const Scaffold(body: Center(child: CircularProgressIndicator(color: Color(0xFF2E7D32))))
+          : _isLoggedIn
+              ? const MainNavigation()
+              : const LoginScreen(),
       routes: {
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),

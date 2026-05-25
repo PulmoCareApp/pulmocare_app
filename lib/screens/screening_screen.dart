@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import '../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../widgets/notification_panel.dart';
+
 
 class ScreeningScreen extends StatefulWidget {
   const ScreeningScreen({Key? key}) : super(key: key);
@@ -23,7 +25,7 @@ class _ScreeningScreenState extends State<ScreeningScreen> {
   void _cekHasil() async {
     // Basic logic
     bool adaGejala = _batuk || _demam || _keringatMalam || _penurunanBerat;
-    
+
     // Calculate a simple score for the database
     int score = 0;
     if (_batuk) score++;
@@ -34,28 +36,41 @@ class _ScreeningScreenState extends State<ScreeningScreen> {
 
     String status = score > 2 ? 'Risiko Tinggi' : (score > 0 ? 'Perlu Perhatian' : 'Risiko Rendah');
 
+    // Simpan ke database — jika gagal, lanjutkan tetap ke hasil (jangan blokir user)
     try {
-      await SupabaseService().saveScreeningResult(
-        score: score,
-        status: status,
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan hasil: $e')));
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        await Supabase.instance.client.from('screening_results').insert({
+          'user_id': user.id,
+          'score': score,
+          'status': status,
+          'batuk': _batuk,
+          'demam': _demam,
+          'keringat_malam': _keringatMalam,
+          'penurunan_berat': _penurunanBerat,
+          'riwayat_kontak': _riwayatKontak ?? false,
+        });
       }
+    } catch (e) {
+      // Simpan ke DB gagal tapi tidak perlu blokir user — lanjut ke hasil
+      debugPrint('[Screening] Gagal simpan ke DB: $e');
     }
 
-    Navigator.pushNamed(
-      context, 
-      '/result', 
-      arguments: {
-        'adaGejala': adaGejala,
-        'batuk': _batuk,
-        'demam': _demam,
-        'keringatMalam': _keringatMalam,
-        'penurunanBerat': _penurunanBerat,
-      }
-    );
+    if (mounted) {
+      Navigator.pushNamed(
+        context,
+        '/result',
+        arguments: {
+          'adaGejala': adaGejala,
+          'batuk': _batuk,
+          'demam': _demam,
+          'keringatMalam': _keringatMalam,
+          'penurunanBerat': _penurunanBerat,
+          'score': score,
+          'status': status,
+        },
+      );
+    }
   }
 
   @override
@@ -79,7 +94,7 @@ class _ScreeningScreenState extends State<ScreeningScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_none, color: Colors.white),
-            onPressed: () {},
+            onPressed: () => NotificationPanel.show(context),
           ),
         ],
       ),

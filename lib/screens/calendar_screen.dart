@@ -1,11 +1,73 @@
 import 'package:flutter/material.dart';
-import '../widgets/medication_card.dart';
 
-class CalendarScreen extends StatelessWidget {
+class CalendarScreen extends StatefulWidget {
   const CalendarScreen({Key? key}) : super(key: key);
 
   @override
+  State<CalendarScreen> createState() => _CalendarScreenState();
+}
+
+class _CalendarScreenState extends State<CalendarScreen> {
+  late DateTime _today;
+  late DateTime _displayMonth; // month currently shown
+  late DateTime _selectedDate;
+
+  static const List<String> _monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _today = DateTime.now();
+    _displayMonth = DateTime(_today.year, _today.month, 1);
+    _selectedDate = _today;
+  }
+
+  void _prevMonth() {
+    setState(() {
+      _displayMonth = DateTime(_displayMonth.year, _displayMonth.month - 1, 1);
+    });
+  }
+
+  void _nextMonth() {
+    setState(() {
+      _displayMonth = DateTime(_displayMonth.year, _displayMonth.month + 1, 1);
+    });
+  }
+
+  /// Returns all day cells for the current display month (padded from Mon).
+  List<DateTime?> _getDayCells() {
+    final firstDay = _displayMonth; // always day 1
+    // weekday: 1=Mon..7=Sun → we want Mon as first column (index 0)
+    final startPad = firstDay.weekday - 1; // days from previous month
+    final daysInMonth =
+        DateTime(_displayMonth.year, _displayMonth.month + 1, 0).day;
+    final cells = <DateTime?>[];
+    for (int i = 0; i < startPad; i++) cells.add(null);
+    for (int d = 1; d <= daysInMonth; d++) {
+      cells.add(DateTime(_displayMonth.year, _displayMonth.month, d));
+    }
+    return cells;
+  }
+
+  bool _isToday(DateTime d) =>
+      d.year == _today.year && d.month == _today.month && d.day == _today.day;
+
+  bool _isSelected(DateTime d) =>
+      d.year == _selectedDate.year &&
+      d.month == _selectedDate.month &&
+      d.day == _selectedDate.day;
+
+  bool _isPast(DateTime d) =>
+      d.isBefore(DateTime(_today.year, _today.month, _today.day));
+
+  @override
   Widget build(BuildContext context) {
+    final cells = _getDayCells();
+    final rows = (cells.length / 7).ceil();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7F6),
       appBar: AppBar(
@@ -33,56 +95,144 @@ class CalendarScreen extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  // Month Header
+                  // Month navigation header
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Icon(Icons.chevron_left, color: Colors.black87),
-                      const Text(
-                        'Oktober 2023',
-                        style: TextStyle(
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left,
+                            color: Colors.black87),
+                        onPressed: _prevMonth,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      Text(
+                        '${_monthNames[_displayMonth.month - 1]} ${_displayMonth.year}',
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF0F3D1B),
                         ),
                       ),
-                      const Icon(Icons.chevron_right, color: Colors.black87),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right,
+                            color: Colors.black87),
+                        onPressed: _nextMonth,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  
-                  // Days of week
+                  const SizedBox(height: 20),
+
+                  // Day-of-week header
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map((day) {
-                      return Text(
-                        day,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      );
-                    }).toList(),
+                    children:
+                        ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']
+                            .map((d) => SizedBox(
+                                  width: 36,
+                                  child: Text(
+                                    d,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black54,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ))
+                            .toList(),
                   ),
+                  const SizedBox(height: 12),
+
+                  // Calendar grid
+                  ...List.generate(rows, (row) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: List.generate(7, (col) {
+                          final idx = row * 7 + col;
+                          if (idx >= cells.length || cells[idx] == null) {
+                            return const SizedBox(width: 36, height: 44);
+                          }
+                          final date = cells[idx]!;
+                          final isSelected = _isSelected(date);
+                          final isToday = _isToday(date);
+                          final isPast = _isPast(date);
+
+                          // Determine dot color
+                          Color? dotColor;
+                          if (isPast && !isToday) {
+                            dotColor = const Color(0xFF1B5E20); // done (past days)
+                          } else if (isToday) {
+                            dotColor = const Color(0xFF1B5E20); // today
+                          } else {
+                            dotColor = Colors.black26; // future = upcoming
+                          }
+
+                          return GestureDetector(
+                            onTap: () =>
+                                setState(() => _selectedDate = date),
+                            child: Container(
+                              width: 36,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? const Color(0xFF0F3D1B)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                                border: isToday && !isSelected
+                                    ? Border.all(
+                                        color: const Color(0xFF1B5E20),
+                                        width: 1.5)
+                                    : null,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    date.day.toString(),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Container(
+                                    width: 4,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? Colors.white
+                                          : dotColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    );
+                  }),
+
                   const SizedBox(height: 16),
 
-                  // Dates Grid (Dummy visual representation)
-                  _buildDatesRow(['28', '29', '30', '1', '2', '3', '4'],
-                      statuses: [null, null, null, 'done', 'done', 'missed', 'done'], isMutedRow: true),
-                  _buildDatesRow(['5', '6', '7', '8', '9', '10', '11'],
-                      statuses: ['done', 'done', 'done', 'done', 'done', 'done', 'waiting'], activeIndex: 6),
-                  _buildDatesRow(['12', '13', '14', '', '', '', ''],
-                      statuses: ['waiting', 'waiting', 'waiting', null, null, null, null]),
-
-                  const SizedBox(height: 24),
                   // Legend
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildLegendItem(const Color(0xFF1B5E20), 'Selesai'),
+                      _buildLegendItem(
+                          const Color(0xFF1B5E20), 'Selesai'),
                       const SizedBox(width: 16),
-                      _buildLegendItem(const Color(0xFFD32F2F), 'Terlewat'),
+                      _buildLegendItem(
+                          const Color(0xFFD32F2F), 'Terlewat'),
                       const SizedBox(width: 16),
                       _buildLegendItem(Colors.black26, 'Akan Datang'),
                     ],
@@ -90,95 +240,58 @@ class CalendarScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
 
-            // Dummy Medication List for selected date
-            MedicationCard(
-              timeText: 'PAGI • 08:00 AM',
-              title: 'Rifampicin 600mg',
-              description: 'Diminum sebelum makan',
-              status: 'done',
+            // Selected date label
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _isToday(_selectedDate)
+                    ? 'Jadwal Hari Ini'
+                    : 'Jadwal ${_selectedDate.day} '
+                        '${_monthNames[_selectedDate.month - 1]} '
+                        '${_selectedDate.year}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0F3D1B),
+                ),
+              ),
             ),
-            MedicationCard(
-              timeText: 'SIANG • 12:30 PM',
-              title: 'Ethambutol 400mg',
-              description: 'Membantu menghentikan pertumbuhan bakteri TBC.',
-              status: 'todo',
-            ),
-            MedicationCard(
-              timeText: 'MALAM • 08:00 PM',
-              title: 'Isoniazid 300mg',
-              description: null,
-              status: 'waiting',
-              isLast: true,
+            const SizedBox(height: 16),
+
+            // Empty state when no reminders
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.event_note_outlined,
+                      size: 48, color: Color(0xFF1B5E20)),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Belum ada jadwal obat',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0F3D1B)),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Tambahkan pengingat obat untuk\nmelihat jadwal pada kalender ini.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.black54, height: 1.5),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildDatesRow(List<String> dates, {List<String?>? statuses, int activeIndex = -1, bool isMutedRow = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: List.generate(7, (index) {
-          final date = dates[index];
-          if (date.isEmpty) return const SizedBox(width: 32, height: 40);
-
-          final isActive = index == activeIndex;
-          final isMuted = isMutedRow && (index < 3); // Mute days from previous month
-          final status = statuses?[index];
-
-          Color dotColor = Colors.transparent;
-          if (status == 'done') dotColor = const Color(0xFF1B5E20);
-          if (status == 'missed') dotColor = const Color(0xFFD32F2F);
-          if (status == 'waiting') dotColor = Colors.black26;
-
-          return Container(
-            width: 36,
-            height: 44,
-            decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF0F3D1B) : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  date,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isActive
-                        ? Colors.white
-                        : (isMuted ? Colors.black26 : Colors.black87),
-                  ),
-                ),
-                if (status != null && !isActive)
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    width: 4,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: dotColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                if (isActive)
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    width: 4,
-                    height: 4,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-              ],
-            ),
-          );
-        }),
       ),
     );
   }
@@ -192,10 +305,9 @@ class CalendarScreen extends StatelessWidget {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.black54),
-        ),
+        Text(label,
+            style:
+                const TextStyle(fontSize: 12, color: Colors.black54)),
       ],
     );
   }

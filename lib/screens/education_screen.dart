@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/article_model.dart';
+import '../widgets/notification_panel.dart';
 
 class EducationScreen extends StatefulWidget {
   const EducationScreen({Key? key}) : super(key: key);
@@ -319,7 +320,7 @@ class _EducationScreenState extends State<EducationScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_none, color: Colors.white),
-            onPressed: () {},
+            onPressed: () => NotificationPanel.show(context),
           ),
         ],
       ),
