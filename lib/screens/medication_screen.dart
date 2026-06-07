@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/medication_card.dart';
 import '../widgets/notification_panel.dart';
 import '../services/supabase_service.dart';
@@ -7,7 +8,8 @@ import 'add_time_screen.dart';
 import 'select_days_screen.dart';
 
 class MedicationScreen extends StatefulWidget {
-  const MedicationScreen({Key? key}) : super(key: key);
+  final bool isActive;
+  const MedicationScreen({Key? key, this.isActive = false}) : super(key: key);
 
   @override
   State<MedicationScreen> createState() => _MedicationScreenState();
@@ -23,9 +25,11 @@ class _MedicationScreenState extends State<MedicationScreen> {
   bool _isEveryDay = true;
   bool _isLoading = false;
   bool _isJadwalHariIni = true;
+  int _medicationTargetDays = 0;
 
-  // Saved reminders displayed in jadwal hari ini
-  final List<Map<String, dynamic>> _savedMedications = [];
+  // Reminder templates stored in this screen
+  final List<Map<String, dynamic>> _reminderTemplates = [];
+  final Set<String> _confirmedScheduleKeys = {};
 
   // Real-time calendar state
   late DateTime _today;
@@ -33,10 +37,14 @@ class _MedicationScreenState extends State<MedicationScreen> {
   late DateTime _calendarWeekStart;
 
   static const List<String> _dayNames = ['SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'MIN'];
+  static const List<String> _dayNamesFull = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
   static const List<String> _monthNames = [
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
   ];
+
+  List<Map<String, dynamic>> _remindersFromDb = [];
+  List<Map<String, dynamic>> _logsFromDb = [];
 
   @override
   void initState() {
@@ -46,6 +54,98 @@ class _MedicationScreenState extends State<MedicationScreen> {
     // Week starts on Monday
     final weekday = _today.weekday; // 1=Mon .. 7=Sun
     _calendarWeekStart = _today.subtract(Duration(days: weekday - 1));
+    _loadMedicationTarget();
+    _loadSchedulesAndLogs();
+  }
+
+  @override
+  void didUpdateWidget(covariant MedicationScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _loadMedicationTarget();
+      _loadSchedulesAndLogs();
+    }
+  }
+
+  Future<void> _loadMedicationTarget() async {
+    try {
+      final profile = await SupabaseService().getUserProfile();
+      if (profile != null && mounted) {
+        setState(() {
+          _medicationTargetDays = profile['medication_target_days'] ?? 0;
+        });
+      }
+    } catch (e) {
+      print('DEBUG [MedicationScreen]: error in _loadMedicationTarget = $e');
+    }
+  }
+
+  Future<void> _loadSchedulesAndLogs() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        // Fetch all reminders
+        final remData = await Supabase.instance.client
+            .from('medication_reminders')
+            .select()
+            .eq('user_id', user.id);
+        
+        // Fetch logs for the selected date
+        final logsData = await SupabaseService().getMedicationLogsForDate(_selectedDate);
+
+        if (mounted) {
+          setState(() {
+            _remindersFromDb = List<Map<String, dynamic>>.from(remData);
+            _logsFromDb = List<Map<String, dynamic>>.from(logsData);
+            
+            // Reconstruct _reminderTemplates from db reminders
+            _reminderTemplates.clear();
+            for (var reminder in _remindersFromDb) {
+              final String fullDosage = reminder['dosage'] as String? ?? '';
+              final parts = fullDosage.split(' • ');
+              final String dosage = parts.isNotEmpty ? parts[0] : '';
+              final String? notes = parts.length > 1 ? parts[1] : null;
+              final timeRaw = reminder['time_to_take'] as String? ?? '00:00:00';
+              final time = timeRaw.substring(0, 5); // HH:MM
+
+              _reminderTemplates.add({
+                'id': reminder['id'],
+                'reminderIds': [reminder['id']],
+                'name': reminder['medication_name'],
+                'dosage': dosage,
+                'notes': notes,
+                'times': [time],
+                'everyDay': true,
+                'selectedDays': null,
+              });
+            }
+
+            // Sync confirmed schedule keys from db logs
+            _confirmedScheduleKeys.clear();
+            for (var log in _logsFromDb) {
+              final logReminderId = log['reminder_id']; // bigint
+              if (logReminderId != null) {
+                // Find matching reminder in _remindersFromDb by hashing its UUID
+                for (var reminder in _remindersFromDb) {
+                  final String reminderUuid = reminder['id'];
+                  if (SupabaseService().uuidToBigInt(reminderUuid) == logReminderId) {
+                    final timeRaw = reminder['time_to_take'] as String? ?? '00:00:00';
+                    final time = timeRaw.substring(0, 5);
+                    final scheduleKey = '${reminder['id']}_${time}_${_selectedDate.toIso8601String().split('T').first}';
+                    _confirmedScheduleKeys.add(scheduleKey);
+                  }
+                }
+              }
+            }
+          });
+        }
+      }
+    } catch (e) {
+      print('DEBUG [MedicationScreen]: error in _loadSchedulesAndLogs = $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -74,6 +174,47 @@ class _MedicationScreenState extends State<MedicationScreen> {
     if (h >= 12 && h < 17) return 'SIANG';
     if (h >= 17 && h < 21) return 'SORE';
     return 'MALAM';
+  }
+
+  String _dayNameFull(DateTime date) => _dayNamesFull[date.weekday - 1];
+
+  bool _hasReminderOnDate(DateTime date) {
+    if (_reminderTemplates.isEmpty) return false;
+    return _reminderTemplates.any((template) {
+      if (template['everyDay'] == true) return true;
+      final selectedDays = template['selectedDays'] as List<String>?;
+      if (selectedDays == null) return false;
+      return selectedDays.contains(_dayNameFull(date));
+    });
+  }
+
+  List<Map<String, dynamic>> _scheduleForDate(DateTime date) {
+    final schedule = <Map<String, dynamic>>[];
+    for (final template in _reminderTemplates) {
+      final repeat = template['everyDay'] == true ||
+          (template['selectedDays'] as List<String>?)?.contains(_dayNameFull(date)) == true;
+      if (!repeat) continue;
+
+      final times = List<String>.from(template['times'] ?? []);
+      final reminderIds = List<dynamic>.from(template['reminderIds'] ?? []);
+      for (var index = 0; index < times.length; index++) {
+        final time = times[index];
+        final scheduleKey = '${template['id']}_${time}_${date.toIso8601String().split('T').first}';
+        final reminderId = reminderIds.length > index ? reminderIds[index] : null;
+        schedule.add({
+          'scheduleKey': scheduleKey,
+          'templateId': template['id'],
+          'reminderId': reminderId,
+          'timeText': '${_periodLabel(time)} • ${_formatTime12h(time)}',
+          'title': '${template['name']} ${template['dosage']}',
+          'description': template['notes'],
+          'status': _confirmedScheduleKeys.contains(scheduleKey) ? 'done' : 'todo',
+          'date': date,
+        });
+      }
+    }
+    schedule.sort((a, b) => (a['timeText'] as String).compareTo(b['timeText'] as String));
+    return schedule;
   }
 
   // --- Add / Remove time slots ---
@@ -151,12 +292,18 @@ class _MedicationScreenState extends State<MedicationScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final List<dynamic> createdReminderIds = [];
+      final notesVal = _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null;
       for (String time in _times) {
-        await SupabaseService().saveMedicationReminder(
+        final inserted = await SupabaseService().saveMedicationReminder(
           name: _nameController.text.trim(),
           dosage: '${_dosageController.text.trim()} $_dosageUnit',
           time: time,
+          notes: notesVal,
         );
+        final reminderId = inserted != null ? inserted['id'] : null;
+        createdReminderIds.add(reminderId);
+
         final parts = time.split(':');
         if (parts.length == 2) {
           await NotificationService().scheduleDailyReminder(
@@ -169,40 +316,40 @@ class _MedicationScreenState extends State<MedicationScreen> {
         }
       }
 
-      // Add to local schedule list
       if (mounted) {
         final name = _nameController.text.trim();
         final dosage = '${_dosageController.text.trim()} $_dosageUnit';
-        final notes =
-            _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null;
-        setState(() {
-          for (int i = 0; i < _times.length; i++) {
-            final t = _times[i];
-            _savedMedications.add({
-              'id': DateTime.now().millisecondsSinceEpoch + i,
-              'timeText': '${_periodLabel(t)} • ${_formatTime12h(t)}',
-              'title': '$name $dosage',
-              'description': notes,
-              'status': 'todo',
-            });
-          }
-          _savedMedications.sort((a, b) =>
-              (a['timeText'] as String).compareTo(b['timeText'] as String));
+        final notes = notesVal;
+        final newTemplate = {
+          'id': DateTime.now().millisecondsSinceEpoch,
+          'reminderIds': List<dynamic>.from(createdReminderIds),
+          'name': name,
+          'dosage': dosage,
+          'notes': notes,
+          'times': List<String>.from(_times),
+          'everyDay': _isEveryDay,
+          'selectedDays': _isEveryDay ? null : List<String>.from(_selectedDays),
+        };
 
-          // Reset form
+        setState(() {
+          _reminderTemplates.add(newTemplate);
+          _reminderTemplates.sort((a, b) =>
+              (a['name'] as String).compareTo(b['name'] as String));
           _nameController.clear();
           _dosageController.clear();
           _notesController.clear();
           _times = [];
           _selectedDays = [];
           _isEveryDay = true;
-          _isJadwalHariIni = true; // Switch back to schedule view
+          _isJadwalHariIni = true;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Pengingat berhasil disimpan!'),
           backgroundColor: Color(0xFF1B5E20),
         ));
+
+        _loadSchedulesAndLogs();
       }
     } catch (e) {
       if (mounted) {
@@ -214,16 +361,29 @@ class _MedicationScreenState extends State<MedicationScreen> {
     }
   }
 
-  void _confirmMedication(int id) {
-    setState(() {
-      final idx = _savedMedications.indexWhere((m) => m['id'] == id);
-      if (idx != -1) _savedMedications[idx]['status'] = 'done';
+  void _confirmMedication(String scheduleKey) {
+    if (_confirmedScheduleKeys.contains(scheduleKey)) return;
+
+    _confirmedScheduleKeys.add(scheduleKey);
+    setState(() {});
+
+    final scheduleItems = _scheduleForDate(_selectedDate);
+    final scheduleItem = scheduleItems.firstWhere(
+      (item) => item['scheduleKey'] == scheduleKey,
+      orElse: () => <String, dynamic>{},
+    );
+    final reminderId = scheduleItem.isNotEmpty ? scheduleItem['reminderId'] as String? : null;
+
+    SupabaseService().logMedicationTaken(reminderId: reminderId).then((_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Status obat berhasil diperbarui!'),
+        backgroundColor: Color(0xFF1B5E20),
+        duration: Duration(seconds: 2),
+      ));
+      _loadSchedulesAndLogs();
+    }).catchError((e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan log: $e')));
     });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Status obat berhasil diperbarui!'),
-      backgroundColor: Color(0xFF1B5E20),
-      duration: Duration(seconds: 2),
-    ));
   }
 
   // --- Calendar week navigation ---
@@ -239,6 +399,7 @@ class _MedicationScreenState extends State<MedicationScreen> {
 
   @override
   Widget build(BuildContext context) {
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7F6),
       appBar: AppBar(
@@ -282,6 +443,62 @@ class _MedicationScreenState extends State<MedicationScreen> {
             ),
             const SizedBox(height: 24),
 
+            // Medication target display
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Target Kepatuhan', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    const SizedBox(height: 6),
+                    Text('$_medicationTargetDays hari', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                TextButton.icon(
+                  onPressed: () async {
+                    final result = await showDialog<int>(
+                      context: context,
+                      builder: (context) {
+                        final controller = TextEditingController(text: _medicationTargetDays.toString());
+                        return AlertDialog(
+                          title: const Text('Set Target Hari Kepatuhan'),
+                          content: TextField(
+                            controller: controller,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(hintText: 'Masukkan jumlah hari'),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+                            ElevatedButton(
+                              onPressed: () {
+                                final v = int.tryParse(controller.text) ?? 0;
+                                Navigator.pop(context, v);
+                              },
+                              child: const Text('Simpan'),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+
+                    if (result != null) {
+                      try {
+                        await SupabaseService().updateMedicationTarget(result);
+                        if (mounted) setState(() => _medicationTargetDays = result);
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Target berhasil disimpan'), backgroundColor: Color(0xFF1B5E20)));
+                      } catch (e) {
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan target: $e')));
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.edit, color: Color(0xFF1B5E20)),
+                  label: const Text('Ubah', style: TextStyle(color: Color(0xFF1B5E20))),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
             if (_isJadwalHariIni) ..._buildScheduleTab()
             else ..._buildReminderTab(),
           ],
@@ -323,6 +540,9 @@ class _MedicationScreenState extends State<MedicationScreen> {
   List<Widget> _buildScheduleTab() {
     final monthYear =
         '${_monthNames[_selectedDate.month - 1]} ${_selectedDate.year}';
+
+    // Items for the selected date
+    final scheduleItems = _scheduleForDate(_selectedDate);
 
     return [
       // Month header + full calendar link
@@ -381,31 +601,40 @@ class _MedicationScreenState extends State<MedicationScreen> {
               date.month == _today.month &&
               date.day == _today.day;
           return GestureDetector(
-            onTap: () => setState(() => _selectedDate = date),
-            child: _buildDateItem(_dayNames[i], date.day.toString(), isSelected, isToday),
+            onTap: () {
+              setState(() => _selectedDate = date);
+              _loadSchedulesAndLogs();
+            },
+            child: _buildDateItem(
+              _dayNames[i],
+              date.day.toString(),
+              isSelected,
+              isToday,
+              _hasReminderOnDate(date),
+            ),
           );
         }),
       ),
       const SizedBox(height: 24),
 
       // Medication list or empty state
-      if (_savedMedications.isEmpty) ...[
+      if (scheduleItems.isEmpty) ...[
         _buildEmptyState(),
       ] else ...[
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: _savedMedications.length,
+          itemCount: scheduleItems.length,
           itemBuilder: (context, index) {
-            final med = _savedMedications[index];
+            final med = scheduleItems[index];
             return MedicationCard(
               timeText: med['timeText'],
               title: med['title'],
               description: med['description'],
               status: med['status'],
-              isLast: index == _savedMedications.length - 1,
+              isLast: index == scheduleItems.length - 1,
               onConfirm: med['status'] == 'todo'
-                  ? () => _confirmMedication(med['id'])
+                  ? () => _confirmMedication(med['scheduleKey'])
                   : null,
             );
           },
@@ -467,7 +696,7 @@ class _MedicationScreenState extends State<MedicationScreen> {
   }
 
   Widget _buildDateItem(
-      String day, String date, bool isSelected, bool isToday) {
+      String day, String date, bool isSelected, bool isToday, bool hasReminder) {
     return Column(
       children: [
         Text(
@@ -479,26 +708,44 @@ class _MedicationScreenState extends State<MedicationScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF0F3D1B) : Colors.transparent,
-            shape: BoxShape.circle,
-            border: isToday && !isSelected
-                ? Border.all(color: const Color(0xFF1B5E20), width: 1.5)
-                : null,
-          ),
-          child: Center(
-            child: Text(
-              date,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : Colors.black87,
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF0F3D1B) : Colors.transparent,
+                shape: BoxShape.circle,
+                border: isToday && !isSelected
+                    ? Border.all(color: const Color(0xFF1B5E20), width: 1.5)
+                    : null,
+              ),
+              child: Center(
+                child: Text(
+                  date,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.white : Colors.black87,
+                  ),
+                ),
               ),
             ),
-          ),
+            if (hasReminder)
+              Positioned(
+                bottom: 4,
+                right: 0,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1B5E20),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
         ),
       ],
     );

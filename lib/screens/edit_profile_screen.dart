@@ -16,7 +16,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _emailController;
   late TextEditingController _birthDateController;
   late TextEditingController _bioController;
+  late TextEditingController _targetDaysController;
   late String _selectedGender;
+  late bool _hasTreatment;
 
   @override
   void initState() {
@@ -25,7 +27,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _emailController = TextEditingController(text: widget.user.email);
     _birthDateController = TextEditingController(text: widget.user.birthDate.isEmpty ? '08/14/1995' : widget.user.birthDate);
     _bioController = TextEditingController(text: widget.user.bio.isEmpty ? 'Bismillah sehat dan kaya raya di umur 20-an. Bisa financial freedom di umur 20-an kaya mark lee. HUHU PENGEN.' : widget.user.bio);
+    _targetDaysController = TextEditingController(text: widget.user.medicationTargetDays == 0 ? '128' : widget.user.medicationTargetDays.toString());
     _selectedGender = widget.user.gender;
+    _hasTreatment = widget.user.hasTreatment;
   }
 
   String get avatarPath {
@@ -39,13 +43,38 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void _saveChanges() async {
     setState(() => _isSaving = true);
     try {
+      final currentProfile = await SupabaseService().getUserProfile();
+      DateTime? startDate;
+      if (_hasTreatment) {
+        if (currentProfile != null && currentProfile['treatment_start_date'] != null) {
+          try {
+            startDate = DateTime.parse(currentProfile['treatment_start_date']);
+          } catch (_) {
+            startDate = DateTime.now();
+          }
+        } else {
+          startDate = DateTime.now();
+        }
+      }
+
+      final targetDays = _hasTreatment ? (int.tryParse(_targetDaysController.text) ?? 128) : 0;
+
       await SupabaseService().updateUserProfile(
+        email: _emailController.text,
         name: _nameController.text,
         gender: _selectedGender,
         birthDate: _birthDateController.text,
         bio: _bioController.text,
-        hasTreatment: widget.user.hasTreatment,
+        hasTreatment: _hasTreatment,
+        medicationTargetDays: targetDays,
+        treatmentStartDate: startDate,
       );
+
+      int tDay = 0;
+      if (_hasTreatment && startDate != null) {
+        tDay = DateTime.now().difference(startDate).inDays;
+        if (tDay < 0) tDay = 0;
+      }
 
       final updatedUser = UserModel(
         name: _nameController.text,
@@ -53,8 +82,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         gender: _selectedGender,
         birthDate: _birthDateController.text,
         bio: _bioController.text,
-        hasTreatment: widget.user.hasTreatment,
-        treatmentDay: widget.user.treatmentDay,
+        hasTreatment: _hasTreatment,
+        treatmentDay: tDay,
+        medicationTargetDays: targetDays,
       );
       
       if (mounted) {
@@ -183,6 +213,44 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _buildTextField(controller: _birthDateController),
             const SizedBox(height: 20),
 
+            // STATUS PENGOBATAN TBC
+            _buildFieldLabel('STATUS PENGOBATAN TBC'),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SwitchListTile(
+                title: const Text(
+                  'Sedang Menjalani Pengobatan TBC',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
+                ),
+                subtitle: const Text(
+                  'Aktifkan untuk memantau kepatuhan minum obat',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+                value: _hasTreatment,
+                activeColor: const Color(0xFF1B5E20),
+                contentPadding: EdgeInsets.zero,
+                onChanged: (val) {
+                  setState(() {
+                    _hasTreatment = val;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            if (_hasTreatment) ...[
+              _buildFieldLabel('TARGET HARI KEPATUHAN'),
+              _buildTextField(
+                controller: _targetDaysController,
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 20),
+            ],
+
             _buildFieldLabel('KATA SANDI'),
             Container(
               decoration: BoxDecoration(
@@ -198,10 +266,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
-                  ),
-                  suffixIcon: TextButton(
-                    onPressed: () {},
-                    child: const Text('Ubah', style: TextStyle(color: Color(0xFF1B5E20), fontWeight: FontWeight.bold)),
                   ),
                 ),
               ),
@@ -263,7 +327,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _buildTextField({TextEditingController? controller, String? initialValue, bool readOnly = false, int maxLines = 1}) {
+  Widget _buildTextField({
+    TextEditingController? controller,
+    String? initialValue,
+    bool readOnly = false,
+    int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -274,6 +344,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         initialValue: initialValue,
         readOnly: readOnly,
         maxLines: maxLines,
+        keyboardType: keyboardType,
         style: const TextStyle(fontSize: 14, color: Colors.black87),
         decoration: InputDecoration(
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -292,6 +363,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _emailController.dispose();
     _birthDateController.dispose();
     _bioController.dispose();
+    _targetDaysController.dispose();
     super.dispose();
   }
 }

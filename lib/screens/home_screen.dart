@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/supabase_service.dart';
-import '../widgets/medication_card.dart';
+import '../widgets/home_medication_card.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  final VoidCallback? onViewAllMedications;
+  final bool isActive;
+  const HomeScreen({Key? key, this.onViewAllMedications, this.isActive = false}) : super(key: key);
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -17,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _treatmentTotal = 0;
   bool _isLoading = true;
   List<Map<String, dynamic>> _medications = [];
+  List<Map<String, dynamic>> _medicationLogs = [];
 
   @override
   void initState() {
@@ -24,17 +27,25 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadUserData();
   }
 
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _loadUserData();
+    }
+  }
+
   Future<void> _loadUserData() async {
     try {
-      // Ambil nama dari auth metadata (dikirim saat register)
       final user = Supabase.instance.client.auth.currentUser;
       final metaName = user?.userMetadata?['full_name'] as String? ?? '';
 
-      // Ambil profil dari tabel profiles
       final profile = await SupabaseService().getUserProfile();
+      print('DEBUG [HomeScreen]: profile fetched = $profile');
+      print('DEBUG [HomeScreen]: user metadata name = $metaName');
 
-      // Ambil jadwal obat dari Supabase jika ada
       List<Map<String, dynamic>> meds = [];
+      List<Map<String, dynamic>> logs = [];
       if (profile != null && profile['has_treatment'] == true) {
         try {
           final data = await Supabase.instance.client
@@ -43,22 +54,35 @@ class _HomeScreenState extends State<HomeScreen> {
               .eq('user_id', user!.id)
               .order('time_to_take', ascending: true);
           meds = List<Map<String, dynamic>>.from(data);
-        } catch (_) {
+          print('DEBUG [HomeScreen]: medication reminders fetched = ${meds.length}');
+        } catch (err) {
+          print('DEBUG [HomeScreen]: error fetching reminders = $err');
           meds = [];
+        }
+
+        try {
+          logs = await SupabaseService().getMedicationLogsForDate(DateTime.now());
+          print('DEBUG [HomeScreen]: medication logs fetched = ${logs.length}');
+        } catch (err) {
+          print('DEBUG [HomeScreen]: error fetching logs = $err');
+          logs = [];
         }
       }
 
-      // Hitung hari pengobatan
       int treatmentDay = 0;
-      int treatmentTotal = 128; // TBC standar 128 hari (4 bulan)
+      int treatmentTotal = profile?['medication_target_days'] ?? 128;
       if (profile != null && profile['treatment_start_date'] != null) {
         try {
           final startDate = DateTime.parse(profile['treatment_start_date']);
           treatmentDay = DateTime.now().difference(startDate).inDays + 1;
           if (treatmentDay < 0) treatmentDay = 0;
           if (treatmentDay > treatmentTotal) treatmentDay = treatmentTotal;
-        } catch (_) {}
+        } catch (err) {
+          print('DEBUG [HomeScreen]: error parsing treatment start date = $err');
+        }
       }
+
+      print('DEBUG [HomeScreen]: treatmentDay = $treatmentDay, treatmentTotal = $treatmentTotal, has_treatment = ${profile?['has_treatment']}');
 
       if (mounted) {
         setState(() {
@@ -71,18 +95,61 @@ class _HomeScreenState extends State<HomeScreen> {
           _treatmentDay = treatmentDay;
           _treatmentTotal = treatmentTotal;
           _medications = meds;
+          _medicationLogs = logs;
           _isLoading = false;
         });
       }
     } catch (e) {
+      print('DEBUG [HomeScreen]: outer exception in _loadUserData = $e');
       if (mounted) {
-        // Fallback: gunakan nama dari auth saja
         final user = Supabase.instance.client.auth.currentUser;
         final metaName = user?.userMetadata?['full_name'] as String? ?? 'Pengguna';
         setState(() {
           _userName = metaName;
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  String _determineMedicationStatus(Map<String, dynamic> med) {
+    final String reminderId = med['id'] as String;
+    final int hashedId = SupabaseService().uuidToBigInt(reminderId);
+
+    final alreadyTaken = _medicationLogs.any((log) => log['reminder_id'] == hashedId);
+    if (alreadyTaken) return 'done';
+
+    final String timeRaw = med['time_to_take'] as String? ?? '00:00:00';
+    final parts = timeRaw.split(':');
+    final int hour = int.tryParse(parts[0]) ?? 0;
+    final int minute = int.tryParse(parts[1]) ?? 0;
+    
+    final now = DateTime.now();
+    final medTime = DateTime(now.year, now.month, now.day, hour, minute);
+    if (medTime.isAfter(now)) {
+      return 'waiting';
+    }
+
+    return 'todo';
+  }
+
+  Future<void> _confirmMedication(String reminderId) async {
+    try {
+      await SupabaseService().logMedicationTaken(reminderId: reminderId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Status obat berhasil diperbarui!'),
+          backgroundColor: Color(0xFF1B5E20),
+          duration: Duration(seconds: 2),
+        ));
+        _loadUserData();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Gagal menyimpan log: $e'),
+          backgroundColor: Colors.red,
+        ));
       }
     }
   }
@@ -96,11 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _getGreetingSubtitle() {
-    final hour = DateTime.now().hour;
-    if (hour >= 5 && hour < 12) return 'Mulai hari dengan semangat\ndan jaga kesehatan Anda!';
-    if (hour >= 12 && hour < 15) return 'Jangan lupa istirahat sejenak\ndan minum air yang cukup!';
-    if (hour >= 15 && hour < 18) return 'Semangat menjalani sore hari,\ntap kesehatan Anda selalu!';
-    return 'Istirahat yang cukup\nuntuk tubuh yang sehat!';
+    return 'Semangat terus di perjalanan\npemulihanmu!';
   }
 
   @override
@@ -164,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       TextButton(
-                        onPressed: () {},
+                        onPressed: widget.onViewAllMedications,
                         child: const Text(
                           'LIHAT SEMUA',
                           style: TextStyle(
@@ -187,22 +250,33 @@ class _HomeScreenState extends State<HomeScreen> {
                       itemCount: _medications.length,
                       itemBuilder: (context, index) {
                         final med = _medications[index];
-                        final timeRaw = med['time_to_take'] as String? ?? '00:00';
+                        final String fullDosage = med['dosage'] as String? ?? '';
+                        final parts = fullDosage.split(' • ');
+                        final String dosage = parts.isNotEmpty ? parts[0] : '';
+                        final String? notes = parts.length > 1 ? parts[1] : null;
+                        
+                        final timeRaw = med['time_to_take'] as String? ?? '00:00:00';
                         final timeParts = timeRaw.split(':');
-                        final hour = int.tryParse(timeParts[0]) ?? 0;
-                        final timeLabel = hour < 12
-                            ? 'PAGI • ${timeParts[0]}:${timeParts[1]} AM'
-                            : hour < 15
-                                ? 'SIANG • ${timeParts[0]}:${timeParts[1]} PM'
-                                : hour < 18
-                                    ? 'SORE • ${timeParts[0]}:${timeParts[1]} PM'
-                                    : 'MALAM • ${timeParts[0]}:${timeParts[1]} PM';
-                        return MedicationCard(
-                          title: '${med['medication_name']} ${med['dosage']}',
-                          timeText: timeLabel,
-                          description: 'Pengingat obat',
-                          status: 'todo',
-                          isLast: index == _medications.length - 1,
+                        final hourRaw = timeParts[0];
+                        final minuteRaw = timeParts[1];
+                        final hour = int.tryParse(hourRaw) ?? 0;
+                        final period = hour < 12 ? 'AM' : 'PM';
+                        final h12 = hour % 12 == 0 ? 12 : hour % 12;
+                        final timeFormatted = '${h12.toString().padLeft(2, '0')}:$minuteRaw $period';
+                        
+                        final subtitle = notes != null
+                            ? '$timeFormatted • $notes'
+                            : timeFormatted;
+
+                        final status = _determineMedicationStatus(med);
+
+                        return HomeMedicationCard(
+                          title: med['medication_name'] as String? ?? '',
+                          subtitle: subtitle,
+                          status: status,
+                          onConfirm: status == 'todo'
+                              ? () => _confirmMedication(med['id'] as String)
+                              : null,
                         );
                       },
                     ),

@@ -19,6 +19,8 @@ class ResultScreen extends StatelessWidget {
             };
 
     final bool adaGejala = args['adaGejala'] ?? false;
+    final String status = args['status'] ?? 'Risiko Rendah';
+    final int score = args['score'] ?? 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7F6),
@@ -69,7 +71,7 @@ class ResultScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    adaGejala ? 'Risiko Sedang' : 'Risiko Rendah',
+                    status,
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
@@ -78,9 +80,11 @@ class ResultScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    adaGejala
-                        ? 'Berdasarkan gejala yang dilaporkan, Anda disarankan untuk memeriksakan diri ke dokter.'
-                        : 'Kondisi paru-paru Anda saat ini tampaknya dalam keadaan baik berdasarkan gejala yang Anda laporkan.',
+                    status == 'Risiko Tinggi'
+                        ? 'Berdasarkan gejala yang Anda laporkan, kami sangat menyarankan untuk segera memeriksakan diri ke dokter untuk evaluasi lebih lanjut.'
+                        : status == 'Perlu Perhatian'
+                            ? 'Gejala yang Anda laporkan memerlukan perhatian. Kami menyarankan untuk konsultasi dengan dokter dalam waktu dekat.'
+                            : 'Kondisi paru-paru Anda saat ini tampaknya dalam keadaan baik berdasarkan gejala yang Anda laporkan.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 14,
@@ -132,9 +136,11 @@ class ResultScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              adaGejala
-                  ? 'Kami sangat menyarankan Anda untuk segera mengunjungi fasilitas kesehatan terdekat untuk pemeriksaan lebih lanjut.'
-                  : 'Meskipun hasil skrining menunjukkan risiko rendah, menjaga kesehatan paru-paru tetap penting.',
+              status == 'Risiko Tinggi'
+                  ? 'Risiko tinggi TB memerlukan tindakan cepat. Segera kunjungi fasilitas kesehatan untuk tes diagnostik.'
+                  : status == 'Perlu Perhatian'
+                      ? 'Meskipun belum termasuk risiko tinggi, gejala ini perlu diperhatikan. Konsultasikan dengan dokter untuk evaluasi lebih detail.'
+                      : 'Meskipun hasil skrining menunjukkan risiko rendah, menjaga kesehatan paru-paru tetap penting dengan pola hidup sehat.',
               style: const TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
             ),
             const SizedBox(height: 16),

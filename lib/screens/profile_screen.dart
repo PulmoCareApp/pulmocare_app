@@ -11,6 +11,7 @@ class UserModel {
   String bio;
   bool hasTreatment;
   int treatmentDay;
+  int medicationTargetDays;
 
   UserModel({
     required this.name,
@@ -20,11 +21,13 @@ class UserModel {
     required this.bio,
     required this.hasTreatment,
     required this.treatmentDay,
+    required this.medicationTargetDays,
   });
 }
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  final bool isActive;
+  const ProfileScreen({Key? key, this.isActive = false}) : super(key: key);
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -33,11 +36,22 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   UserModel? _user;
   bool _isLoading = true;
+  int _progressPercent = 0;
+  int _adherencePercent = 0;
+  int _daysLeft = 0;
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _loadUserProfile();
+    }
   }
 
   Future<void> _loadUserProfile() async {
@@ -50,7 +64,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           int tDay = 0;
           if (profileData?['has_treatment'] == true && profileData?['treatment_start_date'] != null) {
             final startDate = DateTime.parse(profileData!['treatment_start_date']);
-            tDay = DateTime.now().difference(startDate).inDays;
+            tDay = DateTime.now().difference(startDate).inDays + 1;
+            if (tDay < 1) tDay = 1;
           }
 
           _user = UserModel(
@@ -60,10 +75,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             birthDate: profileData?['birth_date'] ?? '',
             bio: profileData?['bio'] ?? '',
             hasTreatment: profileData?['has_treatment'] ?? false,
-            treatmentDay: tDay,
+                treatmentDay: tDay,
+                medicationTargetDays: profileData?['medication_target_days'] ?? 0,
           );
           _isLoading = false;
         });
+        // load adherence metrics
+        try {
+          final metrics = await SupabaseService().getAdherenceMetrics(lookbackDays: _user!.medicationTargetDays > 0 ? _user!.medicationTargetDays : 30);
+          if (mounted) setState(() {
+            _progressPercent = metrics['progressPercent'] ?? 0;
+            _adherencePercent = metrics['adherencePercent'] ?? 0;
+            _daysLeft = metrics['daysLeft'] ?? 0;
+          });
+        } catch (_) {}
       }
     } catch (e) {
       if (mounted) {
@@ -92,9 +117,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (updatedUser != null && updatedUser is UserModel) {
-      setState(() {
-        _user = updatedUser;
-      });
+      _loadUserProfile();
     }
   }
 
@@ -185,11 +208,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          _buildStatItem('68%', 'PROGRES'),
+                          _buildStatItem('$_progressPercent%', 'PROGRES'),
                           Container(width: 1, height: 40, color: Colors.white30),
-                          _buildStatItem('98%', 'KEPATUHAN'),
+                          _buildStatItem('$_adherencePercent%', 'KEPATUHAN'),
                           Container(width: 1, height: 40, color: Colors.white30),
-                          _buildStatItem('58', 'HARI LAGI'),
+                          _buildStatItem('$_daysLeft', 'HARI LAGI'),
                         ],
                       ),
                     ],
